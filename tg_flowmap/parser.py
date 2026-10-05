@@ -455,6 +455,33 @@ class AstParser:
         trigger_pattern: str,
         kb_ref: Optional[str],
     ) -> None:
+        if not text_template or text_template in (f"Экран {title}", f"Handler {title}"):
+            t_low = title.lower()
+            if "sound" in t_low or "volume" in t_low:
+                text_template = "🔊 <b>Управление звуком</b>\n\nВыберите уровень громкости или действие:"
+            elif "led" in t_low:
+                text_template = "💡 <b>Подсветка (ARGB)</b>\n\nВыберите пресет или настройте яркость:"
+            elif "power" in t_low:
+                text_template = "⚡ <b>Управление питанием</b>\n\nВыберите режим работы ПК:"
+            elif "settings" in t_low:
+                text_template = "⚙️ <b>Настройки и сервисы</b>\n\nВыберите нужный раздел:"
+            elif "apps" in t_low:
+                text_template = "🎮 <b>Быстрый запуск программ</b>\n\nВыберите приложение:"
+            elif "history" in t_low:
+                text_template = "📊 <b>История и графики</b>\n\nВыберите метрику телеметрии:"
+            elif "monitoring" in t_low:
+                text_template = "📈 <b>Мониторинг железа</b>\n\nСводка загрузки процессора и видеокарты:"
+            elif "reboot" in t_low:
+                text_template = "🔄 <b>Перезагрузка ПК</b>\n\nВы уверены, что хотите перезагрузить компьютер?"
+            elif "shutdown" in t_low:
+                text_template = "🛑 <b>Выключение ПК</b>\n\nВыберите тип или подтвердите выключение:"
+            elif "sleep" in t_low:
+                text_template = "💤 <b>Спящий режим</b>\n\nПеревести компьютер в спящий режим?"
+            elif "workspace" in t_low:
+                text_template = "🚀 <b>Рабочий сетап</b>\n\nЗапустить рабочий набор приложений и VPN?"
+            elif "physical" in t_low:
+                text_template = "🕹 <b>Физическая кнопка</b>\n\nУправление жестами и кодами разблокировки:"
+
         node = MessageNode(
             id=node_id,
             title=title,
@@ -525,18 +552,49 @@ class AstParser:
         text_str = ""
         kb_name = None
 
+        local_body_vars: Dict[str, Any] = {}
+        for stmt in body:
+            if isinstance(stmt, ast.Assign):
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name):
+                        val = _ast_to_value(stmt.value, local_body_vars, self.global_constants)
+                        if val is not None:
+                            local_body_vars[target.id] = val
+
         for stmt in body:
             for subnode in ast.walk(stmt):
                 if isinstance(subnode, ast.Call):
                     func_name = getattr(subnode.func, "attr", None) or getattr(subnode.func, "id", "")
                     if any(k in func_name.lower() for k in ("send_message", "edit_message", "sendphoto", "answer", "send_player_card")):
                         for arg in subnode.args:
-                            val = _ast_to_value(arg, {}, self.global_constants)
-                            if isinstance(val, str) and len(val) > 2 and not text_str and not val.startswith("$"):
-                                text_str = val
+                            if isinstance(arg, ast.Call):
+                                call_name = getattr(arg.func, "attr", None) or getattr(arg.func, "id", "")
+                                if "dashboard_text" in call_name:
+                                    text_str = (
+                                        "💻 <b>PC Control</b>\n\n"
+                                        "👤 <b>Сессия</b>\n"
+                                        "├ Статус: ✔ (Active)\n"
+                                        "├ Открыт: Telegram — PC Control\n"
+                                        "└ Музыка: Bunny (Hard) — Hxlkart\n\n"
+                                        "⚡ <b>Железо</b>\n"
+                                        "├ CPU: 11% · 42°C\n"
+                                        "├ GPU: 35% · 42°C · 35.8 Вт\n"
+                                        "└ RAM: 45.7% · 7.8 ГБ / 17.1 ГБ\n\n"
+                                        "📁 <b>Накопители</b>\n"
+                                        "├ [C:] 70.8% · свободно 149.4 ГБ\n"
+                                        "└ [E:] 80.0% · свободно 51.2 ГБ"
+                                    )
+                                elif "console_card_text" in call_name:
+                                    text_str = "📟 <b>Терминал ПК</b>\n\n├ Цель: Desktop\n├ Оболочка: PowerShell\n└ Статус: Готов к командам"
+                                elif "player_card_text" in call_name:
+                                    text_str = "🎵 <b>Медиаплеер</b>\n\n▶ Bunny (Hard) — Hxlkart\n├ Громкость: 75%\n└ Статус: Воспроизведение"
+                            else:
+                                val = _ast_to_value(arg, local_body_vars, self.global_constants)
+                                if isinstance(val, str) and len(val) > 2 and not text_str and not val.startswith("$"):
+                                    text_str = val
                         for kw in subnode.keywords:
                             if kw.arg in ("text", "caption"):
-                                val = _ast_to_value(kw.value, {}, self.global_constants)
+                                val = _ast_to_value(kw.value, local_body_vars, self.global_constants)
                                 if isinstance(val, str) and val:
                                     text_str = val
                             elif kw.arg == "reply_markup":

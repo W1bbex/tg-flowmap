@@ -133,7 +133,8 @@ def test_visualizer_renders_valid_html():
 
         assert out_html.exists()
         content = out_html.read_text(encoding="utf-8")
-        assert "vis-network" in content
+        assert "canvas-world" in content
+        assert "tg-card" in content
         assert "tg-flowmap" in content
         assert "cb:menu" in content
     finally:
