@@ -21,4 +21,6 @@ Extracts message templates, inline keyboards, callbacks, and state transitions w
 - [x] Core AST parser: keyboard extractor, callback router extractor, message caller extractor.
 - [x] Graph builder and linter (detects dead ends, null emoji IDs, orphan buttons, callback length limits).
 - [x] Standalone interactive HTML exporter with pan/zoom/search and node inspector.
-- [x] Full test suite (6 passing tests) and dogfood verification on `pc-control/vds_bot`.
+- [x] Full test suite (7 passing tests including performance & memory budgets) and dogfood verification on `pc-control/vds_bot`.
+- [x] 4-type visual taxonomy (Commands, Screens, Callbacks, Popups) with live filter bar.
+- [x] Multi-deck canvas layout (Commands, Popups, Secondary Handlers) and straight-vertical tree branches.
