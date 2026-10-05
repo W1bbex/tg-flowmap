@@ -530,6 +530,17 @@ class AstParser:
             if resolved_kb:
                 node.keyboard = resolved_kb
 
+        # Classify node_type
+        if node_id.startswith("cmd:") or trigger_type == "command":
+            node.node_type = "command"
+        elif any(k in node_id.lower() for k in ("cancel", "retry", "noop", "close")):
+            node.node_type = "popup"
+            node.is_alert = True
+        elif node.keyboard and node.keyboard.rows and len(node.keyboard.rows) > 0:
+            node.node_type = "message"
+        else:
+            node.node_type = "callback"
+
         self.nodes[node_id] = node
 
     def _extract_route_conditions(self, test_node: ast.AST) -> List[Tuple[str, str]]:

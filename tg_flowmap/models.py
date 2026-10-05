@@ -54,6 +54,9 @@ class MessageNode:
     trigger_type: str = "callback"  # "command", "callback", "entry"
     trigger_pattern: str = ""
     aliases: List[str] = field(default_factory=list)
+    node_type: str = "message"  # "command", "message", "callback", "popup"
+    is_alert: bool = False
+    popup_text: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -66,6 +69,9 @@ class MessageNode:
             "trigger_type": self.trigger_type,
             "trigger_pattern": self.trigger_pattern,
             "aliases": self.aliases,
+            "node_type": self.node_type,
+            "is_alert": self.is_alert,
+            "popup_text": self.popup_text,
         }
 
 

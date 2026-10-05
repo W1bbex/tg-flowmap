@@ -84,6 +84,65 @@ class HtmlVisualizer:
       gap: 8px;
     }}
 
+    /* Type Filter Bar */
+    .type-filter-group {{
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(15, 23, 42, 0.65);
+      padding: 3px 6px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }}
+    .filter-chip {{
+      background: transparent;
+      border: 1px solid transparent;
+      color: #94a3b8;
+      padding: 4px 9px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s ease;
+      user-select: none;
+    }}
+    .filter-chip:hover {{
+      background: rgba(255, 255, 255, 0.08);
+      color: #f1f5f9;
+    }}
+    .filter-chip.active {{
+      background: #1e293b;
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    }}
+    .filter-chip .chip-dot {{
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+    }}
+    .chip-dot.dot-all {{ background: #94a3b8; }}
+    .chip-dot.dot-command {{ background: #38bdf8; box-shadow: 0 0 6px #38bdf8; }}
+    .chip-dot.dot-message {{ background: #818cf8; box-shadow: 0 0 6px #818cf8; }}
+    .chip-dot.dot-callback {{ background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }}
+    .chip-dot.dot-popup {{ background: #fb7185; box-shadow: 0 0 6px #fb7185; }}
+
+    .chip-count {{
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      color: #cbd5e1;
+      font-family: monospace;
+    }}
+    .filter-chip.active .chip-count {{
+      background: rgba(255, 255, 255, 0.22);
+      color: #fff;
+    }}
+
     .search-box {{
       background: rgba(9, 13, 22, 0.7);
       border: 1px solid #334155;
@@ -91,17 +150,17 @@ class HtmlVisualizer:
       padding: 6px 12px;
       color: #fff;
       font-size: 13px;
-      width: 220px;
+      width: 200px;
       outline: none;
       transition: border-color 0.15s, width 0.2s;
     }}
-    .search-box:focus {{ border-color: var(--accent); width: 260px; }}
+    .search-box:focus {{ border-color: var(--accent); width: 240px; }}
 
     .btn-tool {{
       background: #1e293b;
       border: 1px solid #334155;
       color: #cbd5e1;
-      padding: 6px 12px;
+      padding: 6px 11px;
       border-radius: 6px;
       font-size: 12px;
       font-weight: 600;
@@ -250,38 +309,187 @@ class HtmlVisualizer:
       contain: layout style;
       transition: border-color 0.15s, box-shadow 0.15s, opacity 0.15s;
     }}
+    /* Card Type Distinct Borders, Backgrounds and Shadows */
+    .tg-card.card-type-command {{
+      border: 1.5px solid rgba(56, 189, 248, 0.65);
+      background: linear-gradient(180deg, #0b172a 0%, #070d18 100%);
+      box-shadow: 0 4px 20px rgba(14, 165, 233, 0.15), var(--card-shadow);
+    }}
+    .tg-card.card-type-message {{
+      border: 1.5px solid rgba(129, 140, 248, 0.5);
+      background: linear-gradient(180deg, #13192f 0%, #0d1322 100%);
+      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.12), var(--card-shadow);
+    }}
+    .tg-card.card-type-callback {{
+      border: 1.5px solid rgba(245, 158, 11, 0.55);
+      background: linear-gradient(180deg, #1c150c 0%, #0e121a 100%);
+      box-shadow: 0 4px 20px rgba(245, 158, 11, 0.12), var(--card-shadow);
+    }}
+    .tg-card.card-type-popup {{
+      border: 1.5px dashed rgba(244, 63, 94, 0.75);
+      background: linear-gradient(180deg, #220f16 0%, #0e111a 100%);
+      box-shadow: 0 4px 20px rgba(244, 63, 94, 0.15), var(--card-shadow);
+    }}
+
+    /* VIP Cards */
     .tg-card.is-root-start {{
-      border: 2px solid #eab308;
-      box-shadow: 0 0 25px rgba(234, 179, 8, 0.3), var(--card-shadow);
+      border: 2.5px solid #eab308 !important;
+      box-shadow: 0 0 35px rgba(234, 179, 8, 0.45), var(--card-shadow) !important;
     }}
     .tg-card.is-hub-menu {{
-      border: 2px solid #10b981;
-      box-shadow: 0 0 30px rgba(16, 185, 129, 0.35), var(--card-shadow);
+      border: 2.5px solid #10b981 !important;
+      box-shadow: 0 0 40px rgba(16, 185, 129, 0.45), var(--card-shadow) !important;
     }}
     .tg-card.is-utility-card {{
-      border: 1px dashed rgba(239, 68, 68, 0.45);
-      background: #0d1527;
+      border: 1.5px dashed rgba(244, 63, 94, 0.65);
     }}
-    .utility-badge {{
+
+    /* Badges */
+    .badge-type {{
       font-size: 10px;
-      color: #f87171;
-      background: rgba(239, 68, 68, 0.15);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      padding: 1px 5px;
+      padding: 1px 6px;
       border-radius: 4px;
-      font-weight: 600;
+      font-weight: 700;
       white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
     }}
-    .cmd-badge {{
-      font-size: 10px;
+    .badge-type-command {{
       color: #38bdf8;
       background: rgba(56, 189, 248, 0.15);
-      border: 1px solid rgba(56, 189, 248, 0.3);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+    }}
+    .badge-type-message {{
+      color: #a5b4fc;
+      background: rgba(129, 140, 248, 0.15);
+      border: 1px solid rgba(129, 140, 248, 0.35);
+    }}
+    .badge-type-callback {{
+      color: #fbbf24;
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+    }}
+    .badge-type-popup {{
+      color: #fb7185;
+      background: rgba(244, 63, 94, 0.15);
+      border: 1px solid rgba(244, 63, 94, 0.35);
+    }}
+    .badge-type-entry {{
+      color: #fde047;
+      background: rgba(234, 179, 8, 0.2);
+      border: 1px solid rgba(234, 179, 8, 0.5);
+    }}
+    .badge-type-hub {{
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid rgba(16, 185, 129, 0.5);
+    }}
+    .orphan-badge {{
+      font-size: 10px;
+      color: #94a3b8;
+      background: rgba(148, 163, 184, 0.12);
+      border: 1px solid rgba(148, 163, 184, 0.25);
       padding: 1px 5px;
       border-radius: 4px;
       font-weight: 600;
       white-space: nowrap;
     }}
+
+    /* Inner Custom Boxes for Types */
+    .popup-modal-mockup {{
+      padding: 12px 14px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      background: rgba(244, 63, 94, 0.08);
+      border-radius: 8px;
+      margin: 10px 12px 6px 12px;
+      border: 1px solid rgba(244, 63, 94, 0.2);
+    }}
+    .popup-modal-icon {{ font-size: 20px; line-height: 1; }}
+    .popup-modal-content {{ flex: 1; }}
+    .popup-modal-title {{
+      font-size: 11px;
+      font-weight: 700;
+      color: #fca5a5;
+      margin-bottom: 3px;
+      text-transform: uppercase;
+    }}
+    .popup-modal-text {{
+      font-size: 12px;
+      color: #f1f5f9;
+      line-height: 1.4;
+    }}
+    .popup-modal-footer {{
+      padding: 4px 12px 12px 12px;
+      display: flex;
+      justify-content: flex-end;
+    }}
+    .popup-modal-btn {{
+      padding: 5px 16px;
+      border-radius: 6px;
+      background: rgba(244, 63, 94, 0.2);
+      border: 1px solid rgba(244, 63, 94, 0.4);
+      color: #fecdd3;
+      font-size: 11px;
+      font-weight: 700;
+      text-align: center;
+      cursor: default;
+    }}
+
+    .callback-action-box {{
+      margin: 10px 12px 12px 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+    }}
+    .callback-action-header {{
+      font-size: 11px;
+      font-weight: 700;
+      color: #fde68a;
+      margin-bottom: 4px;
+    }}
+    .callback-action-header code {{
+      font-size: 11px;
+      color: #fbbf24;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }}
+    .callback-action-text {{
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.4;
+    }}
+
+    .command-box {{
+      margin: 10px 12px 12px 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(56, 189, 248, 0.08);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }}
+    .command-box-prompt {{
+      margin-bottom: 4px;
+    }}
+    .command-box-prompt code {{
+      font-size: 13px;
+      font-weight: 700;
+      color: #38bdf8;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }}
+    .command-box-text {{
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.4;
+    }}
+
     .start-entry-badge {{
       margin: 8px 12px 14px 12px;
       padding: 10px 12px;
@@ -292,13 +500,16 @@ class HtmlVisualizer:
       flex-direction: column;
       gap: 6px;
     }}
-    .tg-card.highlighted {{
+
+    .tg-card.highlighted, .tg-card.type-highlighted {{
       border-color: var(--accent) !important;
       box-shadow: 0 0 0 2px var(--accent), 0 10px 30px rgba(56, 189, 248, 0.4) !important;
       z-index: 50;
     }}
     .tg-card.dimmed {{
-      opacity: 0.2;
+      opacity: 0.15 !important;
+      filter: grayscale(60%);
+      pointer-events: none;
     }}
 
     /* Card Header */
@@ -457,45 +668,48 @@ class HtmlVisualizer:
       z-index: 30;
     }}
 
-    /* Isolated / Orphan Zone */
-    .isolated-zone {{
+    /* Canvas Zones (Commands, Popups, Handlers) */
+    .canvas-zone {{
       position: absolute;
-      border: 2px dashed rgba(255, 255, 255, 0.12);
       border-radius: 18px;
-      background: rgba(15, 23, 42, 0.4);
       pointer-events: none;
       transition: opacity 0.2s;
     }}
-    .isolated-zone-header {{
+    .canvas-zone.zone-commands {{
+      border: 2px dashed rgba(56, 189, 248, 0.4);
+      background: rgba(14, 165, 233, 0.04);
+    }}
+    .canvas-zone.zone-popups {{
+      border: 2px dashed rgba(244, 63, 94, 0.4);
+      background: rgba(244, 63, 94, 0.04);
+    }}
+    .canvas-zone.zone-handlers {{
+      border: 2px dashed rgba(148, 163, 184, 0.3);
+      background: rgba(15, 23, 42, 0.35);
+    }}
+    .canvas-zone-header {{
       position: absolute;
       top: -36px;
       left: 16px;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       font-size: 13px;
       font-weight: 700;
-      color: #94a3b8;
+      color: #cbd5e1;
       white-space: nowrap;
     }}
-    .isolated-zone-header span {{
+    .canvas-zone-header .zone-icon {{
+      font-size: 14px;
+    }}
+    .canvas-zone-header .zone-sub {{
       font-size: 11px;
       font-weight: 500;
       color: #64748b;
     }}
     .hide-orphans .is-orphan-card,
-    .hide-orphans .isolated-zone {{
+    .hide-orphans .canvas-zone {{
       display: none !important;
-    }}
-    .orphan-badge {{
-      font-size: 10px;
-      color: #94a3b8;
-      background: rgba(148, 163, 184, 0.12);
-      border: 1px solid rgba(148, 163, 184, 0.25);
-      padding: 1px 5px;
-      border-radius: 4px;
-      font-weight: 600;
-      white-space: nowrap;
     }}
 
     /* HUD Controls */
@@ -529,11 +743,28 @@ class HtmlVisualizer:
 <body>
   <header>
     <div class="brand">🧭 tg-flowmap <span>// граф экранов</span></div>
+    <div class="type-filter-group" id="type-filters">
+      <button class="filter-chip active" data-type="all">
+        <span class="chip-dot dot-all"></span> Все <span class="chip-count" id="count-all">0</span>
+      </button>
+      <button class="filter-chip" data-type="command">
+        <span class="chip-dot dot-command"></span> ⚡ Команды <span class="chip-count" id="count-command">0</span>
+      </button>
+      <button class="filter-chip" data-type="message">
+        <span class="chip-dot dot-message"></span> 💬 Экраны <span class="chip-count" id="count-message">0</span>
+      </button>
+      <button class="filter-chip" data-type="callback">
+        <span class="chip-dot dot-callback"></span> 🔘 Действия <span class="chip-count" id="count-callback">0</span>
+      </button>
+      <button class="filter-chip" data-type="popup">
+        <span class="chip-dot dot-popup"></span> 🔔 Всплывающие <span class="chip-count" id="count-popup">0</span>
+      </button>
+    </div>
     <div class="toolbar-actions">
       <input type="text" id="search-input" class="search-box" placeholder="Поиск кнопки или экрана..." />
       <button class="btn-tool" id="btn-back-edges" title="Показать / скрыть обратные стрелки «Назад» и «В меню»">↩ Возвраты</button>
       <button class="btn-tool active" id="btn-labels" title="Включить / скрыть подписи на стрелочках">🏷️ Подписи</button>
-      <button class="btn-tool active" id="btn-orphans" title="Показать или скрыть несвязанные экраны и обработчики">📦 Несвязанные</button>
+      <button class="btn-tool active" id="btn-orphans" title="Показать или скрыть несвязанные экраны и обработчики">📦 Дополнительные</button>
       <button class="btn-tool" id="btn-fit" title="Вписать всё в экран">📐 Вписать всё</button>
     </div>
   </header>
@@ -805,10 +1036,15 @@ class HtmlVisualizer:
       }}
     }}
 
-    function getChildColumn(parentId, childId) {{
+    if (isStartHubPair) {{
+      forwardEdgesMap.set(rootId, [hubId]);
+    }}
+
+    function getChildCategory(parentId, childId) {{
       const node = rawData.nodes[parentId];
-      if (!node || !node.keyboard || !node.keyboard.rows) return 0;
-      for (let r = 0; r < node.keyboard.rows.length; r++) {{
+      if (!node || !node.keyboard || !node.keyboard.rows) return "left";
+      const numRows = node.keyboard.rows.length;
+      for (let r = 0; r < numRows; r++) {{
         const row = node.keyboard.rows[r];
         for (let c = 0; c < row.length; c++) {{
           const btn = row[c];
@@ -818,19 +1054,37 @@ class HtmlVisualizer:
             ((btn.callback_data && e.callback_data === btn.callback_data) || e.button_text === btn.text)
           );
           if (match) {{
-            if (row.length === 1) return r === 0 ? 0 : 1;
-            return c;
+            if (row.length > 2) {{
+              if (c === 0) return "left";
+              if (c === row.length - 1) return "right";
+              return "bottom";
+            }} else if (row.length === 2) {{
+              return c === 0 ? "left" : "right";
+            }} else {{
+              // Full-width (row.length === 1):
+              // If bottom row (or in lower half of rows): goes bottom/center!
+              if (r === numRows - 1 || r >= Math.ceil(numRows / 2)) {{
+                return "bottom";
+              }} else {{
+                return "left";
+              }}
+            }}
           }}
         }}
       }}
-      return 0;
+      return "left";
     }}
 
-    // Sort children of multi-column cards so column 0 (left) comes first, column 1 (right) comes second
+    // Sort children so "left" comes first, "bottom" comes second, "right" comes third
+    const CATEGORY_ORDER = {{ left: 0, bottom: 1, right: 2 }};
     for (const [id, kids] of forwardEdgesMap.entries()) {{
       const node = rawData.nodes[id];
       if (node && node.keyboard && node.keyboard.rows && node.keyboard.rows.some(r => r.length > 1)) {{
-        kids.sort((a, b) => getChildColumn(id, a) - getChildColumn(id, b));
+        kids.sort((a, b) => {{
+          const catA = CATEGORY_ORDER[getChildCategory(id, a)] ?? 0;
+          const catB = CATEGORY_ORDER[getChildCategory(id, b)] ?? 0;
+          return catA - catB;
+        }});
       }}
     }}
 
@@ -866,40 +1120,55 @@ class HtmlVisualizer:
       }}
     }}
 
-    // Explore main bot first
+    // Explore main bot tree
     exploreBfsTree(rootId);
     if (!visitedNodes.has(hubId)) exploreBfsTree(hubId);
 
-    // Explore secondary bot commands (e.g. /led, /console, /exit, /player)
-    const priorityCmds = ["cmd:/led", "cmd:/console", "cmd:/exit", "cmd:/player", "cmd:/cmd", "cmd:/ps", "cmd:/led_on", "cmd:/led_off"];
-    for (const cmdId of priorityCmds) {{
-      exploreBfsTree(cmdId);
-    }}
-    for (const k of Object.keys(rawData.nodes)) {{
-      if (k.startsWith("cmd:")) exploreBfsTree(k);
+    // Classification helper for the 4 core types
+    function getNodeType(nodeId, node) {{
+      if (node && node.node_type) return node.node_type;
+      if (nodeId.startsWith("cmd:") || (node && node.trigger_type === "command")) return "command";
+      if (UTILITY_TARGETS.has(nodeId) || (node && node.is_alert)) return "popup";
+      if (node && node.keyboard && node.keyboard.rows && node.keyboard.rows.length > 0) return "message";
+      return "callback";
     }}
 
-    // 3. Exact Subtree Width on the Spanning Tree with Bifurcation Support
+    // 3. Exact Subtree Width on the Spanning Tree with Trifurcation Support (Left / Bottom-Center / Right)
     function computeSubtreeWidth(nodeId) {{
       const children = treeChildren.get(nodeId) || [];
       if (children.length === 0) return CARD_W;
 
-      const leftKids = children.filter(c => getChildColumn(nodeId, c) === 0);
-      const rightKids = children.filter(c => getChildColumn(nodeId, c) === 1);
+      const isHub = (nodeId === hubId);
+      if (isHub) {{
+        const leftKids = children.filter(c => getChildCategory(nodeId, c) === "left");
+        const bottomKids = children.filter(c => getChildCategory(nodeId, c) === "bottom");
+        const rightKids = children.filter(c => getChildCategory(nodeId, c) === "right");
 
-      if (leftKids.length > 0 && rightKids.length > 0) {{
-        let leftW = 0;
-        for (let i = 0; i < leftKids.length; i++) {{
-          if (i > 0) leftW += SIBLING_GAP_X;
-          leftW += computeSubtreeWidth(leftKids[i]);
+        if (leftKids.length > 0 || rightKids.length > 0 || bottomKids.length > 0) {{
+          let leftW = 0;
+          for (let i = 0; i < leftKids.length; i++) {{
+            if (i > 0) leftW += SIBLING_GAP_X;
+            leftW += computeSubtreeWidth(leftKids[i]);
+          }}
+
+          let bottomW = 0;
+          for (let i = 0; i < bottomKids.length; i++) {{
+            if (i > 0) bottomW += SIBLING_GAP_X;
+            bottomW += computeSubtreeWidth(bottomKids[i]);
+          }}
+
+          let rightW = 0;
+          for (let i = 0; i < rightKids.length; i++) {{
+            if (i > 0) rightW += SIBLING_GAP_X;
+            rightW += computeSubtreeWidth(rightKids[i]);
+          }}
+
+          const centerBlockW = Math.max(CARD_W, bottomW);
+          const gapLeft = (leftW > 0) ? Math.max(SIBLING_GAP_X, 80) : 0;
+          const gapRight = (rightW > 0) ? Math.max(SIBLING_GAP_X, 80) : 0;
+
+          return leftW + gapLeft + centerBlockW + gapRight + rightW;
         }}
-        let rightW = 0;
-        for (let i = 0; i < rightKids.length; i++) {{
-          if (i > 0) rightW += SIBLING_GAP_X;
-          rightW += computeSubtreeWidth(rightKids[i]);
-        }}
-        const centerGap = Math.max(SIBLING_GAP_X, CARD_W + 80);
-        return leftW + centerGap + rightW;
       }}
 
       let totalW = 0;
@@ -910,119 +1179,233 @@ class HtmlVisualizer:
       return Math.max(CARD_W, totalW);
     }}
 
+    function shiftSubtree(nodeId, dx) {{
+      if (dx === 0) return;
+      const pos = nodePositions.get(nodeId);
+      if (pos) pos.x += dx;
+      const kids = treeChildren.get(nodeId) || [];
+      for (const kid of kids) shiftSubtree(kid, dx);
+    }}
+
     function placeTreeNode(nodeId, leftX, levelY) {{
       const children = treeChildren.get(nodeId) || [];
-      const leftKids = children.filter(c => getChildColumn(nodeId, c) === 0);
-      const rightKids = children.filter(c => getChildColumn(nodeId, c) === 1);
+      const isHub = (nodeId === hubId);
 
-      if (leftKids.length > 0 && rightKids.length > 0) {{
-        let leftW = 0;
-        for (let i = 0; i < leftKids.length; i++) {{
-          if (i > 0) leftW += SIBLING_GAP_X;
-          leftW += computeSubtreeWidth(leftKids[i]);
-        }}
-        const centerGap = Math.max(SIBLING_GAP_X, CARD_W + 80);
-        const myX = leftX + leftW + centerGap / 2 - CARD_W / 2;
-        nodePositions.set(nodeId, {{ x: myX, y: levelY }});
+      if (isHub) {{
+        const leftKids = children.filter(c => getChildCategory(nodeId, c) === "left");
+        const bottomKids = children.filter(c => getChildCategory(nodeId, c) === "bottom");
+        const rightKids = children.filter(c => getChildCategory(nodeId, c) === "right");
 
-        let childLeftX = leftX;
-        for (const childId of leftKids) {{
-          const childW = computeSubtreeWidth(childId);
-          placeTreeNode(childId, childLeftX, levelY + CARD_H + LEVEL_GAP_Y);
-          childLeftX += childW + SIBLING_GAP_X;
-        }}
+        if (leftKids.length > 0 || rightKids.length > 0 || bottomKids.length > 0) {{
+          let leftW = 0;
+          for (let i = 0; i < leftKids.length; i++) {{
+            if (i > 0) leftW += SIBLING_GAP_X;
+            leftW += computeSubtreeWidth(leftKids[i]);
+          }}
 
-        let childRightX = leftX + leftW + centerGap;
-        for (const childId of rightKids) {{
-          const childW = computeSubtreeWidth(childId);
-          placeTreeNode(childId, childRightX, levelY + CARD_H + LEVEL_GAP_Y);
-          childRightX += childW + SIBLING_GAP_X;
-        }}
-      }} else {{
-        const subtreeW = computeSubtreeWidth(nodeId);
-        const myX = leftX + (subtreeW - CARD_W) / 2;
-        nodePositions.set(nodeId, {{ x: myX, y: levelY }});
+          let bottomW = 0;
+          for (let i = 0; i < bottomKids.length; i++) {{
+            if (i > 0) bottomW += SIBLING_GAP_X;
+            bottomW += computeSubtreeWidth(bottomKids[i]);
+          }}
 
-        let childLeftX = leftX;
-        for (const childId of children) {{
-          const childW = computeSubtreeWidth(childId);
-          placeTreeNode(childId, childLeftX, levelY + CARD_H + LEVEL_GAP_Y);
-          childLeftX += childW + SIBLING_GAP_X;
+          let rightW = 0;
+          for (let i = 0; i < rightKids.length; i++) {{
+            if (i > 0) rightW += SIBLING_GAP_X;
+            rightW += computeSubtreeWidth(rightKids[i]);
+          }}
+
+          const centerBlockW = Math.max(CARD_W, bottomW);
+          const gapLeft = (leftW > 0) ? Math.max(SIBLING_GAP_X, 80) : 0;
+          const gapRight = (rightW > 0) ? Math.max(SIBLING_GAP_X, 80) : 0;
+
+          const centerBlockX = leftX + (leftW > 0 ? leftW + gapLeft : 0);
+          const myX = centerBlockX + (centerBlockW - CARD_W) / 2;
+          nodePositions.set(nodeId, {{ x: myX, y: levelY }});
+
+          // 1. Place leftKids
+          let childLeftX = leftX;
+          for (const childId of leftKids) {{
+            const childW = computeSubtreeWidth(childId);
+            placeTreeNode(childId, childLeftX, levelY + CARD_H + LEVEL_GAP_Y);
+            childLeftX += childW + SIBLING_GAP_X;
+          }}
+
+          // 2. Place bottomKids (centered directly under parent card!)
+          let childBottomX = centerBlockX + (centerBlockW - bottomW) / 2;
+          for (const childId of bottomKids) {{
+            const childW = computeSubtreeWidth(childId);
+            placeTreeNode(childId, childBottomX, levelY + CARD_H + LEVEL_GAP_Y);
+            childBottomX += childW + SIBLING_GAP_X;
+          }}
+
+          // If single bottom kid, align its card center directly under parent card center!
+          if (bottomKids.length === 1) {{
+            const bKid = bottomKids[0];
+            const bPos = nodePositions.get(bKid);
+            if (bPos) shiftSubtree(bKid, myX - bPos.x);
+          }}
+
+          // 3. Place rightKids
+          let childRightX = centerBlockX + centerBlockW + gapRight;
+          for (const childId of rightKids) {{
+            const childW = computeSubtreeWidth(childId);
+            placeTreeNode(childId, childRightX, levelY + CARD_H + LEVEL_GAP_Y);
+            childRightX += childW + SIBLING_GAP_X;
+          }}
+          return;
         }}
+      }}
+
+      const subtreeW = computeSubtreeWidth(nodeId);
+      const myX = leftX + (subtreeW - CARD_W) / 2;
+      nodePositions.set(nodeId, {{ x: myX, y: levelY }});
+
+      let childLeftX = leftX;
+      for (const childId of children) {{
+        const childW = computeSubtreeWidth(childId);
+        placeTreeNode(childId, childLeftX, levelY + CARD_H + LEVEL_GAP_Y);
+        childLeftX += childW + SIBLING_GAP_X;
       }}
     }}
 
-    // 4. Place Trees side-by-side
-    let currentBlockX = 0;
-    for (const r of forestRoots) {{
-      const treeW = computeSubtreeWidth(r);
-      placeTreeNode(r, currentBlockX, 0);
-      currentBlockX += treeW + 200;
-    }}
-
-    // Align start entry directly over hub menu
+    // 4. Place Main Tree
+    placeTreeNode(rootId, 0, 0);
     if (isStartHubPair && nodePositions.has(rootId) && nodePositions.has(hubId)) {{
       nodePositions.get(rootId).x = nodePositions.get(hubId).x;
     }}
 
-    // 5. Place Utility Cards in a Dedicated Section
-    const utilNodesList = Object.keys(rawData.nodes).filter(k => UTILITY_TARGETS.has(k));
-    if (utilNodesList.length > 0) {{
-      const utilBlockX = currentBlockX + 80;
-      const cols = 2;
-      utilNodesList.forEach((id, idx) => {{
-        const c = idx % cols;
-        const r = Math.floor(idx / cols);
-        const gx = utilBlockX + c * (CARD_W + 50);
+    const mainTreeWidth = computeSubtreeWidth(rootId);
+
+    // 5. Place Secondary Commands in a Compact 3-Column Deck
+    const secondaryCmds = Object.keys(rawData.nodes).filter(k => k.startsWith("cmd:") && !nodePositions.has(k));
+    let cmdBox = null;
+    let maxCmdX = mainTreeWidth + 120;
+    let maxCmdY = 0;
+    if (secondaryCmds.length > 0) {{
+      const cmdCols = 3;
+      const cmdStartX = mainTreeWidth + 120;
+      secondaryCmds.forEach((id, idx) => {{
+        const c = idx % cmdCols;
+        const r = Math.floor(idx / cmdCols);
+        const gx = cmdStartX + c * (CARD_W + 50);
         const gy = r * (CARD_H + 50);
         nodePositions.set(id, {{ x: gx, y: gy }});
+        maxCmdX = Math.max(maxCmdX, gx + CARD_W);
+        maxCmdY = Math.max(maxCmdY, gy + CARD_H);
       }});
-      currentBlockX = utilBlockX + cols * (CARD_W + 50) + 80;
+      cmdBox = {{
+        x: cmdStartX - 20,
+        y: -10,
+        w: maxCmdX - cmdStartX + 40,
+        h: maxCmdY + 50,
+        count: secondaryCmds.length,
+      }};
     }}
 
-    // 6. Place Remaining Unvisited Orphans in a Compact 4-Column Grid
-    const unvisited = Object.keys(rawData.nodes).filter(k => !visitedNodes.has(k) && !UTILITY_TARGETS.has(k));
-    let orphanBox = null;
-    if (unvisited.length > 0) {{
-      const gridStartX = currentBlockX + 60;
-      const cols = 4;
-      let maxGX = gridStartX;
-      let maxGY = 0;
-      unvisited.forEach((id, idx) => {{
-        const c = idx % cols;
-        const r = Math.floor(idx / cols);
-        const gx = gridStartX + c * (CARD_W + 50);
+    // 6. Place Utility / Popups in a Compact 2-Column Deck
+    const utilNodesList = Object.keys(rawData.nodes).filter(k => UTILITY_TARGETS.has(k) && !nodePositions.has(k));
+    let utilBox = null;
+    let maxUtilX = maxCmdX + 70;
+    let maxUtilY = 0;
+    if (utilNodesList.length > 0) {{
+      const utilCols = 2;
+      const utilStartX = maxCmdX + 70;
+      utilNodesList.forEach((id, idx) => {{
+        const c = idx % utilCols;
+        const r = Math.floor(idx / utilCols);
+        const gx = utilStartX + c * (CARD_W + 50);
         const gy = r * (CARD_H + 50);
         nodePositions.set(id, {{ x: gx, y: gy }});
-        maxGX = Math.max(maxGX, gx + CARD_W);
-        maxGY = Math.max(maxGY, gy + CARD_H);
+        maxUtilX = Math.max(maxUtilX, gx + CARD_W);
+        maxUtilY = Math.max(maxUtilY, gy + CARD_H);
       }});
-      orphanBox = {{
-        x: gridStartX - 25,
+      utilBox = {{
+        x: utilStartX - 20,
         y: -10,
-        w: maxGX - gridStartX + 50,
-        h: maxGY + 60,
+        w: maxUtilX - utilStartX + 40,
+        h: maxUtilY + 50,
+        count: utilNodesList.length,
+      }};
+    }}
+
+    // 7. Place Remaining Handlers in a Compact 4-Column Deck below
+    const unvisited = Object.keys(rawData.nodes).filter(k => !nodePositions.has(k));
+    let remBox = null;
+    if (unvisited.length > 0) {{
+      const remCols = 4;
+      const remStartX = mainTreeWidth + 120;
+      const remStartY = Math.max(maxCmdY, maxUtilY) + 100;
+      let maxRemX = remStartX;
+      let maxRemY = remStartY;
+      unvisited.forEach((id, idx) => {{
+        const c = idx % remCols;
+        const r = Math.floor(idx / remCols);
+        const gx = remStartX + c * (CARD_W + 50);
+        const gy = remStartY + r * (CARD_H + 50);
+        nodePositions.set(id, {{ x: gx, y: gy }});
+        maxRemX = Math.max(maxRemX, gx + CARD_W);
+        maxRemY = Math.max(maxRemY, gy + CARD_H);
+      }});
+      remBox = {{
+        x: remStartX - 20,
+        y: remStartY - 40,
+        w: maxRemX - remStartX + 40,
+        h: maxRemY - remStartY + 80,
         count: unvisited.length,
       }};
     }}
 
-    // ==========================================
-    // RENDER TELEGRAM CARDS
-    // ==========================================
-    if (orphanBox) {{
-      const zoneDiv = document.createElement("div");
-      zoneDiv.className = "isolated-zone";
-      zoneDiv.style.left = `${{orphanBox.x}}px`;
-      zoneDiv.style.top = `${{orphanBox.y}}px`;
-      zoneDiv.style.width = `${{orphanBox.w}}px`;
-      zoneDiv.style.height = `${{orphanBox.h}}px`;
-      zoneDiv.innerHTML = `
-        <div class="isolated-zone-header">
-          <span>📦 Несвязанные экраны и обработчики (${{orphanBox.count}})</span>
-          <span>// в коде bot.py нет инлайн-кнопок перехода к этим экранам</span>
+    // Render Canvas Zone Boxes
+    if (cmdBox) {{
+      const z = document.createElement("div");
+      z.className = "canvas-zone zone-commands";
+      z.style.left = `${{cmdBox.x}}px`;
+      z.style.top = `${{cmdBox.y}}px`;
+      z.style.width = `${{cmdBox.w}}px`;
+      z.style.height = `${{cmdBox.h}}px`;
+      z.innerHTML = `
+        <div class="canvas-zone-header">
+          <span class="zone-icon">⚡</span>
+          <span>Слэш-команды Telegram (${{cmdBox.count}})</span>
+          <span class="zone-sub">// вводятся в чат через /</span>
         </div>
       `;
-      nodesContainer.appendChild(zoneDiv);
+      nodesContainer.appendChild(z);
+    }}
+
+    if (utilBox) {{
+      const z = document.createElement("div");
+      z.className = "canvas-zone zone-popups";
+      z.style.left = `${{utilBox.x}}px`;
+      z.style.top = `${{utilBox.y}}px`;
+      z.style.width = `${{utilBox.w}}px`;
+      z.style.height = `${{utilBox.h}}px`;
+      z.innerHTML = `
+        <div class="canvas-zone-header">
+          <span class="zone-icon">🔔</span>
+          <span>Всплывающие окна и диалоги (${{utilBox.count}})</span>
+          <span class="zone-sub">// answerCallbackQuery</span>
+        </div>
+      `;
+      nodesContainer.appendChild(z);
+    }}
+
+    if (remBox) {{
+      const z = document.createElement("div");
+      z.className = "canvas-zone zone-handlers";
+      z.style.left = `${{remBox.x}}px`;
+      z.style.top = `${{remBox.y}}px`;
+      z.style.width = `${{remBox.w}}px`;
+      z.style.height = `${{remBox.h}}px`;
+      z.innerHTML = `
+        <div class="canvas-zone-header">
+          <span class="zone-icon">📦</span>
+          <span>Дополнительные сценарии и обработчики (${{remBox.count}})</span>
+          <span class="zone-sub">// вспомогательные действия и подсистемы</span>
+        </div>
+      `;
+      nodesContainer.appendChild(z);
     }}
 
     for (const [nodeId, node] of Object.entries(rawData.nodes)) {{
@@ -1033,9 +1416,14 @@ class HtmlVisualizer:
       const pos = nodePositions.get(nodeId) || {{ x: 0, y: 0 }};
       const card = document.createElement("div");
       card.className = "tg-card";
+      const nodeType = getNodeType(nodeId, node);
+      card.dataset.nodeType = nodeType;
+      card.classList.add(`card-type-${{nodeType}}`);
+
+
       if (nodeId === "cmd:/start") card.classList.add("is-root-start");
       if (nodeId === "cb:menu") card.classList.add("is-hub-menu");
-      if (UTILITY_TARGETS.has(nodeId)) card.classList.add("is-utility-card");
+      if (nodeType === "popup") card.classList.add("is-utility-card");
       if (unvisited.includes(nodeId)) card.classList.add("is-orphan-card");
       card.id = `card-${{nodeId}}`;
       card.style.left = `${{pos.x}}px`;
@@ -1049,38 +1437,51 @@ class HtmlVisualizer:
       // Card Header
       const header = document.createElement("div");
       header.className = "tg-card-header";
-      const icon = nodeId.startsWith("cmd:") ? "⚡" : (nodeId === "cb:menu" ? "📱" : (UTILITY_TARGETS.has(nodeId) ? "⚙️" : "💬"));
       const srcName = node.source_file ? node.source_file.split(/[/\\\\]/).pop() : "";
       const lineStr = node.line_number ? `:${{node.line_number}}` : "";
 
+      let icon = "💬";
       let badgeHtml = "";
-      if (UTILITY_TARGETS.has(nodeId)) {{
-        badgeHtml = `<span class="utility-badge">Попап</span>`;
-      }} else if (unvisited.includes(nodeId)) {{
-        badgeHtml = `<span class="orphan-badge">Не связан</span>`;
-      }} else if (nodeId.startsWith("cmd:") && nodeId !== "cmd:/start") {{
-        badgeHtml = `<span class="cmd-badge">Команда</span>`;
+      if (nodeId === "cmd:/start") {{
+        icon = "⭐";
+        badgeHtml = `<span class="badge-type badge-type-entry">⭐ Вход</span>`;
+      }} else if (nodeId === "cb:menu") {{
+        icon = "🏠";
+        badgeHtml = `<span class="badge-type badge-type-hub">🏠 Меню</span>`;
+      }} else if (nodeType === "command") {{
+        icon = "⚡";
+        badgeHtml = `<span class="badge-type badge-type-command">⚡ Команда</span>`;
+      }} else if (nodeType === "popup") {{
+        icon = "🔔";
+        badgeHtml = `<span class="badge-type badge-type-popup">🔔 Всплывающее</span>`;
+      }} else if (nodeType === "callback") {{
+        icon = "🔘";
+        badgeHtml = `<span class="badge-type badge-type-callback">🔘 Действие</span>`;
+      }} else {{
+        icon = "💬";
+        badgeHtml = `<span class="badge-type badge-type-message">💬 Экран</span>`;
       }}
+
+      const displayTitle = nodeType === "command" ? (nodeId.startsWith("cmd:/") ? nodeId.slice(4) : "/" + nodeId.slice(4)) : node.title;
 
       header.innerHTML = `
         <div class="card-title-group">
           <span style="font-size:13px;">${{icon}}</span>
-          <span class="card-screen-title" title="${{node.title}}">${{node.title}}</span>
+          <span class="card-screen-title" title="${{displayTitle}}">${{displayTitle}}</span>
           ${{badgeHtml}}
         </div>
         <div class="card-meta">${{srcName}}${{lineStr}}</div>
       `;
       card.appendChild(header);
 
-      // Message Body
-      const body = document.createElement("div");
-      body.className = "tg-card-body";
-      body.innerHTML = node.text_template || "<i>(Пустой текст)</i>";
-      card.appendChild(body);
-
-      // Keyboard with Colored Buttons or Entry Badge
+      // Message Body / Custom Box Mockup
       const isStartHub = (isStartHubPair && nodeId === rootId);
       if (isStartHub) {{
+        const body = document.createElement("div");
+        body.className = "tg-card-body";
+        body.innerHTML = node.text_template || "<i>(Точка входа)</i>";
+        card.appendChild(body);
+
         const badge = document.createElement("div");
         badge.className = "start-entry-badge";
         badge.innerHTML = `
@@ -1091,7 +1492,52 @@ class HtmlVisualizer:
           </div>
         `;
         card.appendChild(badge);
-      }} else if (node.keyboard && node.keyboard.rows && node.keyboard.rows.length) {{
+      }} else if (nodeType === "popup") {{
+        const body = document.createElement("div");
+        body.className = "tg-card-body";
+        body.innerHTML = `
+          <div class="popup-modal-mockup">
+            <div class="popup-modal-icon">🔔</div>
+            <div class="popup-modal-content">
+              <div class="popup-modal-title">Всплывающее окно</div>
+              <div class="popup-modal-text">${{node.text_template || "Уведомление answerCallbackQuery"}}</div>
+            </div>
+          </div>
+          <div class="popup-modal-footer">
+            <div class="popup-modal-btn">OK</div>
+          </div>
+        `;
+        card.appendChild(body);
+      }} else if (nodeType === "command") {{
+        const body = document.createElement("div");
+        body.className = "tg-card-body";
+        const cmdName = nodeId.startsWith("cmd:/") ? nodeId.slice(5) : nodeId.slice(4);
+        body.innerHTML = `
+          <div class="command-box">
+            <div class="command-box-prompt"><code>/${{cmdName}}</code></div>
+            <div class="command-box-text">${{node.text_template || "Команда Telegram-чата"}}</div>
+          </div>
+        `;
+        card.appendChild(body);
+      }} else if (nodeType === "callback" && (!node.keyboard || !node.keyboard.rows || !node.keyboard.rows.length)) {{
+        const body = document.createElement("div");
+        body.className = "tg-card-body";
+        const cbName = nodeId.replace(/^cb:/, '');
+        body.innerHTML = `
+          <div class="callback-action-box">
+            <div class="callback-action-header">🔘 Действие: <code>${{cbName}}</code></div>
+            <div class="callback-action-text">${{node.text_template || "Обрабатывает нажатие инлайн-кнопки"}}</div>
+          </div>
+        `;
+        card.appendChild(body);
+      }} else {{
+        const body = document.createElement("div");
+        body.className = "tg-card-body";
+        body.innerHTML = node.text_template || "<i>(Пустой текст)</i>";
+      }}
+
+      // Keyboard with Colored Buttons
+      if (node.keyboard && node.keyboard.rows && node.keyboard.rows.length) {{
         const kbDiv = document.createElement("div");
         kbDiv.className = "tg-keyboard";
 
@@ -1560,14 +2006,19 @@ class HtmlVisualizer:
         const rowButtons = rowEl ? Array.from(rowEl.querySelectorAll(".tg-btn")) : [btnEl];
         const btnIdxInRow = rowButtons.indexOf(btnEl);
         const isLeftCol = (rowButtons.length > 1 && btnIdxInRow === 0);
+        const isRightCol = (rowButtons.length > 1 && btnIdxInRow === rowButtons.length - 1);
         const btnCenterY = offTop + bH / 2;
 
         if (isLeftCol) {{
           fromX = fromPos.x;
-        }} else {{
+          fromY = fromPos.y + btnCenterY;
+        }} else if (isRightCol) {{
           fromX = fromPos.x + CARD_W;
+          fromY = fromPos.y + btnCenterY;
+        }} else {{
+          fromX = fromPos.x + offLeft + (btnEl.offsetWidth || 140) / 2;
+          fromY = fromPos.y + (fromCard.offsetHeight || CARD_H);
         }}
-        fromY = fromPos.y + btnCenterY;
       }}
 
       const toX = toPos.x + CARD_W / 2;
@@ -1675,6 +2126,103 @@ class HtmlVisualizer:
       }}
     }});
 
+    // Type Filters Engine
+    let currentFilterType = "all";
+    const filterChips = document.querySelectorAll(".filter-chip");
+
+    // Populate live counts
+    const typeCounts = {{ all: Object.keys(rawData.nodes).length, command: 0, message: 0, callback: 0, popup: 0 }};
+    for (const [id, node] of Object.entries(rawData.nodes)) {{
+      const t = getNodeType(id, node);
+      if (typeCounts[t] !== undefined) typeCounts[t]++;
+    }}
+    const elCountAll = document.getElementById("count-all");
+    const elCountCmd = document.getElementById("count-command");
+    const elCountMsg = document.getElementById("count-message");
+    const elCountCb = document.getElementById("count-callback");
+    const elCountPop = document.getElementById("count-popup");
+
+    if (elCountAll) elCountAll.textContent = typeCounts.all;
+    if (elCountCmd) elCountCmd.textContent = typeCounts.command;
+    if (elCountMsg) elCountMsg.textContent = typeCounts.message;
+    if (elCountCb) elCountCb.textContent = typeCounts.callback;
+    if (elCountPop) elCountPop.textContent = typeCounts.popup;
+
+    filterChips.forEach(chip => {{
+      const type = chip.dataset.type;
+
+      chip.addEventListener("mouseenter", () => {{
+        if (type === "all") return;
+        document.querySelectorAll(".tg-card").forEach(c => {{
+          if (c.dataset.nodeType === type) {{
+            c.classList.add("type-highlighted");
+            c.classList.remove("dimmed");
+          }} else {{
+            c.classList.remove("type-highlighted");
+            c.classList.add("dimmed");
+          }}
+        }});
+      }});
+
+      chip.addEventListener("mouseleave", () => {{
+        if (currentFilterType !== "all") {{
+          applyFilter(currentFilterType, false);
+        }} else {{
+          document.querySelectorAll(".tg-card").forEach(c => {{
+            c.classList.remove("type-highlighted", "dimmed");
+          }});
+        }}
+      }});
+
+      chip.addEventListener("click", () => {{
+        filterChips.forEach(ch => ch.classList.remove("active"));
+        chip.classList.add("active");
+        currentFilterType = type;
+        applyFilter(type, true);
+      }});
+    }});
+
+    function applyFilter(type, shouldFly = false) {{
+      if (type === "all") {{
+        document.querySelectorAll(".tg-card").forEach(c => {{
+          c.classList.remove("dimmed", "type-highlighted");
+        }});
+        if (shouldFly) centerOnStart(600);
+        return;
+      }}
+
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      let matchedCount = 0;
+
+      document.querySelectorAll(".tg-card").forEach(c => {{
+        if (c.dataset.nodeType === type) {{
+          c.classList.remove("dimmed");
+          c.classList.add("type-highlighted");
+          matchedCount++;
+          const nodeId = c.id.replace(/^card-/, "");
+          const pos = nodePositions.get(nodeId);
+          if (pos) {{
+            minX = Math.min(minX, pos.x);
+            minY = Math.min(minY, pos.y);
+            maxX = Math.max(maxX, pos.x + CARD_W);
+            maxY = Math.max(maxY, pos.y + CARD_H);
+          }}
+        }} else {{
+          c.classList.add("dimmed");
+          c.classList.remove("type-highlighted");
+        }}
+      }});
+
+      if (shouldFly && matchedCount > 0 && isFinite(minX)) {{
+        const boxW = maxX - minX + 240;
+        const boxH = maxY - minY + 240;
+        const targetScale = Math.min(1.0, Math.max(0.15, Math.min(window.innerWidth / boxW, window.innerHeight / boxH)));
+        const targetPanX = (window.innerWidth - (maxX + minX) * targetScale) / 2;
+        const targetPanY = Math.max(30, (window.innerHeight - (maxY + minY) * targetScale) / 2);
+        smoothFlyTo(targetPanX, targetPanY, targetScale, 700);
+      }}
+    }}
+
     // Toggle Labels
     document.getElementById("btn-labels").addEventListener("click", function() {{
       showLabels = !showLabels;
@@ -1702,7 +2250,7 @@ class HtmlVisualizer:
     }}
 
     // Fit View
-    document.getElementById("btn-fit").addEventListener("click", () => {{
+    function fitView(duration = 700) {{
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const [id, pos] of nodePositions.entries()) {{
         if (!showOrphans && unvisited.includes(id)) continue;
@@ -1719,19 +2267,18 @@ class HtmlVisualizer:
       const targetScale = Math.min(1.0, Math.max(0.015, Math.min(window.innerWidth / worldW, window.innerHeight / worldH)));
       const targetPanX = (window.innerWidth - (maxX + minX) * targetScale) / 2;
       const targetPanY = 40;
-      smoothFlyTo(targetPanX, targetPanY, targetScale, 700);
-    }});
+      smoothFlyTo(targetPanX, targetPanY, targetScale, duration);
+    }}
+
+    document.getElementById("btn-fit").addEventListener("click", () => fitView(700));
 
     window.addEventListener("resize", () => {{
       renderConnectors();
     }});
 
-    // Initial View on load: Start at Top!
+    // Initial View on load
     if (window.location.hash === "#fit") {{
-      setTimeout(() => {{
-        const btnFit = document.getElementById("btn-fit");
-        if (btnFit) btnFit.click();
-      }}, 150);
+      fitView(0);
     }} else {{
       centerOnStart(0);
     }}
