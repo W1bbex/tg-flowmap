@@ -20,25 +20,25 @@ class HtmlVisualizer:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>tg-flowmap — Интерактивная карта экранов Telegram-бота</title>
+  <title>tg-flowmap — Иерархическое дерево Telegram-бота</title>
   <style>
     * {{ box-sizing: border-box; margin: 0; padding: 0; user-select: none; }}
     
     :root {{
-      --bg-canvas: #0b0f19;
+      --bg-canvas: #090d16;
       --grid-dot: rgba(255, 255, 255, 0.06);
       --card-bg: #17212b;
-      --card-border: rgba(255, 255, 255, 0.09);
-      --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      --card-border: rgba(255, 255, 255, 0.1);
+      --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
       --text-main: #f5f5f5;
       --text-sub: #7e8b99;
       --btn-default: #242f3d;
-      --btn-primary: #2ea6ff;
-      --btn-success: #31b545;
-      --btn-danger: #df3f40;
+      --color-primary: #2ea6ff;
+      --color-success: #31b545;
+      --color-danger: #df3f40;
+      --color-back: #64748b;
+      --color-dead: #ef4444;
       --accent: #38bdf8;
-      --danger: #ef4444;
-      --warning: #f59e0b;
     }}
 
     body {{
@@ -54,7 +54,7 @@ class HtmlVisualizer:
 
     /* Top Navigation Toolbar */
     header {{
-      height: 52px;
+      height: 54px;
       background: #0f172a;
       border-bottom: 1px solid #1e293b;
       padding: 0 20px;
@@ -81,27 +81,25 @@ class HtmlVisualizer:
     }}
     .brand span {{ color: var(--accent); }}
 
-    .cluster-legend {{
+    .tree-legend {{
       display: flex;
       gap: 10px;
       margin-left: 20px;
     }}
-    .legend-tag {{
-      font-size: 11px;
+    .legend-item {{
+      font-size: 11.5px;
       font-weight: 600;
       padding: 3px 8px;
       border-radius: 4px;
       background: #1e293b;
-      color: #94a3b8;
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 5px;
     }}
-    .legend-tag.center {{ border-left: 3px solid #10b981; color: #6ee7b7; }}
-    .legend-tag.settings {{ border-left: 3px solid #38bdf8; color: #7dd3fc; }}
-    .legend-tag.power {{ border-left: 3px solid #f87171; color: #fca5a5; }}
-    .legend-tag.sound {{ border-left: 3px solid #c084fc; color: #e9d5ff; }}
-    .legend-tag.apps {{ border-left: 3px solid #fbbf24; color: #fde68a; }}
+    .legend-item.green {{ color: #4ade80; border-left: 3px solid var(--color-success); }}
+    .legend-item.blue {{ color: #60a5fa; border-left: 3px solid var(--color-primary); }}
+    .legend-item.red {{ color: #f87171; border-left: 3px solid var(--color-danger); }}
+    .legend-item.back {{ color: #94a3b8; border-left: 3px solid var(--color-back); }}
 
     .toolbar-actions {{
       display: flex;
@@ -125,7 +123,7 @@ class HtmlVisualizer:
       background: #1e293b;
       border: 1px solid #334155;
       color: #cbd5e1;
-      padding: 5px 12px;
+      padding: 6px 12px;
       border-radius: 6px;
       font-size: 12px;
       font-weight: 600;
@@ -133,12 +131,12 @@ class HtmlVisualizer:
       display: flex;
       align-items: center;
       gap: 5px;
-      transition: background 0.15s, color 0.15s;
+      transition: background 0.15s;
     }}
     .btn-tool:hover {{ background: #334155; color: #fff; }}
     .btn-tool.active {{ background: #0369a1; border-color: #38bdf8; color: #fff; }}
 
-    /* Main Viewport */
+    /* Viewport & World */
     #viewport {{
       flex: 1;
       position: relative;
@@ -160,7 +158,7 @@ class HtmlVisualizer:
       will-change: transform;
     }}
 
-    /* SVG Connector Edges Layer */
+    /* SVG Layer with dynamic colored arrows */
     #svg-layer {{
       position: absolute;
       top: 0;
@@ -174,54 +172,80 @@ class HtmlVisualizer:
 
     .flow-edge {{
       fill: none;
-      stroke: var(--accent);
-      stroke-width: 2px;
-      opacity: 0.55;
-      pointer-events: stroke;
-      cursor: pointer;
+      stroke-width: 2.2px;
+      opacity: 0.75;
+      transition: stroke-width 0.15s, opacity 0.15s;
     }}
     .flow-edge.back {{
-      stroke: #64748b;
-      stroke-dasharray: 5, 5;
+      stroke-dasharray: 6, 5;
       opacity: 0.35;
     }}
     .flow-edge.dead {{
-      stroke: var(--danger);
       stroke-width: 2.5px;
       stroke-dasharray: 6, 4;
-      opacity: 0.85;
+      opacity: 0.9;
     }}
     .flow-edge.highlighted {{
-      stroke: #38bdf8 !important;
-      stroke-width: 3.5px !important;
+      stroke-width: 4px !important;
       opacity: 1 !important;
-      filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.7));
+      filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.8));
     }}
     .flow-edge.dimmed {{
-      opacity: 0.05 !important;
+      opacity: 0.08 !important;
+    }}
+    .flow-edge.edge-pulse {{
+      stroke-width: 5px !important;
+      opacity: 1 !important;
+      filter: drop-shadow(0 0 8px var(--accent)) drop-shadow(0 0 16px var(--accent)) !important;
+      animation: edgePulseAnim 0.7s ease-in-out infinite alternate;
+    }}
+    @keyframes edgePulseAnim {{
+      0% {{ stroke-width: 3.5px; opacity: 0.85; }}
+      100% {{ stroke-width: 6px; opacity: 1; }}
     }}
 
-    /* Cluster Background Areas */
-    .cluster-zone {{
+    /* Edge Floating Label Badges */
+    .edge-labels-container {{
       position: absolute;
-      border-radius: 20px;
-      border: 1px dashed rgba(255, 255, 255, 0.07);
-      background: rgba(255, 255, 255, 0.015);
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
       pointer-events: none;
-      z-index: 5;
-    }}
-    .cluster-label {{
-      position: absolute;
-      top: -24px;
-      left: 16px;
-      font-size: 13px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      color: #64748b;
+      z-index: 15;
     }}
 
-    /* Telegram Message Cards (HTML Nodes) */
+    .edge-label-pill {{
+      position: absolute;
+      transform: translate(-50%, -50%);
+      background: #0b1320;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      pointer-events: auto;
+      white-space: nowrap;
+      transition: transform 0.15s, border-color 0.15s;
+    }}
+    .edge-label-pill:hover {{
+      transform: translate(-50%, -50%) scale(1.1);
+      z-index: 50;
+    }}
+    .edge-label-pill code {{
+      font-family: monospace;
+      font-size: 10px;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 1px 4px;
+      border-radius: 3px;
+      color: #cbd5e1;
+    }}
+
+    /* Nodes Container */
     .nodes-container {{
       position: absolute;
       top: 0;
@@ -232,9 +256,10 @@ class HtmlVisualizer:
       z-index: 20;
     }}
 
+    /* Telegram Card */
     .tg-card {{
       position: absolute;
-      width: 330px;
+      width: 320px;
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 14px;
@@ -246,27 +271,36 @@ class HtmlVisualizer:
       contain: layout style paint;
       transition: border-color 0.15s, box-shadow 0.15s, opacity 0.15s;
     }}
-    .tg-card.is-center-menu {{
+    .tg-card.is-root-start {{
+      border: 2px solid #eab308;
+      box-shadow: 0 0 25px rgba(234, 179, 8, 0.3), var(--card-shadow);
+    }}
+    .tg-card.is-hub-menu {{
       border: 2px solid #10b981;
-      box-shadow: 0 0 25px rgba(16, 185, 129, 0.25), var(--card-shadow);
+      box-shadow: 0 0 30px rgba(16, 185, 129, 0.35), var(--card-shadow);
+    }}
+    .start-entry-badge {{
+      margin: 8px 12px 14px 12px;
+      padding: 10px 12px;
+      background: rgba(234, 179, 8, 0.08);
+      border: 1px dashed rgba(234, 179, 8, 0.35);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }}
     .tg-card.highlighted {{
       border-color: var(--accent) !important;
-      box-shadow: 0 0 0 2px var(--accent), 0 10px 30px rgba(56, 189, 248, 0.35) !important;
+      box-shadow: 0 0 0 2px var(--accent), 0 10px 30px rgba(56, 189, 248, 0.4) !important;
       z-index: 50;
     }}
     .tg-card.dimmed {{
-      opacity: 0.25;
-    }}
-    .tg-card.dead-end-card {{
-      background: #250d0f;
-      border-color: #ef4444;
-      box-shadow: 0 0 20px rgba(239, 68, 68, 0.35);
+      opacity: 0.2;
     }}
 
     /* Card Header */
     .tg-card-header {{
-      padding: 9px 12px;
+      padding: 8px 12px;
       background: rgba(0, 0, 0, 0.25);
       border-top-left-radius: 14px;
       border-top-right-radius: 14px;
@@ -292,11 +326,11 @@ class HtmlVisualizer:
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 190px;
+      max-width: 180px;
     }}
 
     .card-meta {{
-      font-size: 10.5px;
+      font-size: 10px;
       color: var(--text-sub);
       font-family: monospace;
       background: rgba(255, 255, 255, 0.05);
@@ -307,24 +341,21 @@ class HtmlVisualizer:
     /* Card Message Body */
     .tg-card-body {{
       padding: 12px 14px 10px 14px;
-      font-size: 12.5px;
+      font-size: 12px;
       line-height: 1.45;
       color: var(--text-main);
       white-space: pre-wrap;
       word-break: break-word;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
-      max-height: 280px;
-      overflow-y: hidden;
+      max-height: 180px;
+      overflow: hidden;
     }}
-    .tg-card-body b, .tg-card-body strong {{
-      color: #fff;
-      font-weight: 600;
-    }}
+    .tg-card-body b, .tg-card-body strong {{ color: #fff; font-weight: 600; }}
     .tg-card-body code {{
       background: rgba(0, 0, 0, 0.3);
       padding: 1px 4px;
-      border-radius: 4px;
-      font-size: 11.5px;
+      border-radius: 3px;
+      font-size: 11px;
       color: #38bdf8;
     }}
 
@@ -348,7 +379,7 @@ class HtmlVisualizer:
 
     .tg-btn {{
       flex: 1;
-      height: 35px;
+      height: 34px;
       border-radius: 7px;
       background: var(--btn-default);
       color: #e4ecf2;
@@ -365,6 +396,7 @@ class HtmlVisualizer:
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      min-width: 0;
       transition: filter 0.1s, transform 0.1s;
     }}
     .tg-btn:hover {{
@@ -372,43 +404,37 @@ class HtmlVisualizer:
       transform: translateY(-1px);
     }}
 
-    /* Telegram Colored Buttons */
-    .tg-btn.style-success {{
-      background: var(--btn-success) !important;
-      color: #ffffff !important;
-      border: none !important;
-    }}
-    .tg-btn.style-primary {{
-      background: var(--btn-primary) !important;
-      color: #ffffff !important;
-      border: none !important;
-    }}
-    .tg-btn.style-danger {{
-      background: var(--btn-danger) !important;
-      color: #ffffff !important;
-      border: none !important;
-    }}
+    .tg-btn.style-success {{ background: var(--color-success) !important; color: #fff !important; border: none; }}
+    .tg-btn.style-primary {{ background: var(--color-primary) !important; color: #fff !important; border: none; }}
+    .tg-btn.style-danger {{ background: var(--color-danger) !important; color: #fff !important; border: none; }}
     .tg-btn.dead-end-btn {{
-      border: 2px dashed #ef4444 !important;
+      border: 2px dashed var(--color-dead) !important;
       background: rgba(239, 68, 68, 0.2) !important;
       color: #fca5a5 !important;
     }}
 
+    /* Connection Ports */
     .btn-port {{
       position: absolute;
-      right: -4px;
+      right: -3px;
       top: 50%;
       transform: translateY(-50%);
-      width: 7px;
-      height: 7px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
       background: var(--accent);
-      border: 2px solid var(--card-bg);
-      opacity: 0.6;
+      border: 1px solid #fff;
     }}
-    .tg-btn:hover .btn-port {{
-      opacity: 1;
-      transform: translateY(-50%) scale(1.3);
+    .card-top-port {{
+      position: absolute;
+      top: -5px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      border: 2px solid var(--card-bg);
     }}
 
     /* HUD Controls */
@@ -442,30 +468,35 @@ class HtmlVisualizer:
 <body>
   <header>
     <div class="logo-area">
-      <div class="brand">🧭 tg-flowmap <span>// hub canvas</span></div>
-      <div class="cluster-legend">
-        <div class="legend-tag center">🟢 Меню (Центр)</div>
-        <div class="legend-tag settings">⚙️ Настройки (Справа)</div>
-        <div class="legend-tag power">⚡ Питание (Слева)</div>
-        <div class="legend-tag sound">🔊 Звук (Сверху)</div>
-        <div class="legend-tag apps">🎮 Программы (Снизу)</div>
+      <div class="brand">🧭 tg-flowmap <span>// tree hierarchy</span></div>
+      <div class="tree-legend">
+        <div class="legend-item green">Питание / Включение</div>
+        <div class="legend-item blue">Настройки / Сервисы</div>
+        <div class="legend-item red">Выключение / Опасные</div>
+        <div class="legend-item back">↩ Возврат в меню</div>
       </div>
     </div>
     <div class="toolbar-actions">
       <input type="text" id="search-input" class="search-box" placeholder="Поиск кнопки или экрана..." />
-      <button class="btn-tool active" id="btn-focus-mode" title="Показывать связи только для активного экрана для устранения каши">🎯 Фокус-режим</button>
-      <button class="btn-tool" id="btn-center-menu">📍 К Главному меню</button>
+      <button class="btn-tool active" id="btn-labels" title="Включить / скрыть подписи на стрелочках">🏷️ Подписи связей</button>
+      <button class="btn-tool" id="btn-top-start">🔝 К началу (/start)</button>
+      <button class="btn-tool" id="btn-hub-menu">📱 К Главному меню</button>
       <button class="btn-tool" id="btn-fit">📐 Вписать всё</button>
     </div>
   </header>
 
   <div id="viewport">
     <div id="canvas-world">
-      <div id="clusters-layer"></div>
       <svg id="svg-layer">
         <defs>
-          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M 0 1 L 9 5 L 0 9 z" fill="#38bdf8" />
+          <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#31b545" />
+          </marker>
+          <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#2ea6ff" />
+          </marker>
+          <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#df3f40" />
           </marker>
           <marker id="arrow-back" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M 0 1 L 9 5 L 0 9 z" fill="#64748b" />
@@ -473,15 +504,19 @@ class HtmlVisualizer:
           <marker id="arrow-dead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M 0 1 L 9 5 L 0 9 z" fill="#ef4444" />
           </marker>
+          <marker id="arrow-default" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#38bdf8" />
+          </marker>
         </defs>
       </svg>
+      <div class="edge-labels-container" id="edge-labels-container"></div>
       <div class="nodes-container" id="nodes-container"></div>
     </div>
 
     <div class="hud-controls">
       <button class="hud-btn" id="btn-zoom-in" title="Приблизить">+</button>
       <button class="hud-btn" id="btn-zoom-out" title="Отдалить">−</button>
-      <button class="hud-btn" id="btn-reset" title="К центру">⌂</button>
+      <button class="hud-btn" id="btn-reset" title="К началу">⌂</button>
     </div>
   </div>
 
@@ -501,29 +536,77 @@ class HtmlVisualizer:
       "status_inactive": "❌", "wave": "〰️"
     }};
 
-    let scale = 0.85;
-    let panX = window.innerWidth / 2 - 165;
-    let panY = window.innerHeight / 2 - 180;
+    let scale = 0.8;
+    let panX = window.innerWidth / 2 - 160;
+    let panY = 60;
     let isPanning = false;
     let startX = 0;
     let startY = 0;
-    let focusOnlyMode = true; // By default: focus mode to eliminate clutter and lag!
-    let activeFocusedNode = "cb:menu";
+    let showLabels = true;
+    let activeFocusedNode = null;
+    let animFrameId = null;
 
     const viewport = document.getElementById("viewport");
     const world = document.getElementById("canvas-world");
     const svgLayer = document.getElementById("svg-layer");
+    const labelsContainer = document.getElementById("edge-labels-container");
     const nodesContainer = document.getElementById("nodes-container");
-    const clustersLayer = document.getElementById("clusters-layer");
 
     function updateTransform() {{
       world.style.transform = `translate3d(${{panX}}px, ${{panY}}px, 0) scale(${{scale}})`;
     }}
     updateTransform();
 
-    // Viewport Panning
+    // Smooth Flying Animation Engine
+    function smoothFlyTo(targetPanX, targetPanY, targetScale = scale, duration = 650) {{
+      if (animFrameId) {{
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+      }}
+      if (duration <= 0) {{
+        panX = targetPanX;
+        panY = targetPanY;
+        scale = targetScale;
+        updateTransform();
+        return;
+      }}
+
+      const startPanX = panX;
+      const startPanY = panY;
+      const startScale = scale;
+      const startTime = performance.now();
+
+      function easeInOutCubic(t) {{
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      }}
+
+      function frame(now) {{
+        const elapsed = now - startTime;
+        const p = Math.min(1.0, elapsed / duration);
+        const ease = easeInOutCubic(p);
+
+        panX = startPanX + (targetPanX - startPanX) * ease;
+        panY = startPanY + (targetPanY - startPanY) * ease;
+        scale = startScale + (targetScale - startScale) * ease;
+        updateTransform();
+
+        if (p < 1.0) {{
+          animFrameId = requestAnimationFrame(frame);
+        }} else {{
+          animFrameId = null;
+        }}
+      }}
+
+      animFrameId = requestAnimationFrame(frame);
+    }}
+
+    // Pan & Zoom
     viewport.addEventListener("mousedown", (e) => {{
-      if (e.target.closest(".tg-card") || e.target.closest(".hud-controls")) return;
+      if (animFrameId) {{
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+      }}
+      if (e.target.closest(".tg-card") || e.target.closest(".hud-controls") || e.target.closest(".edge-label-pill")) return;
       isPanning = true;
       startX = e.clientX - panX;
       startY = e.clientY - panY;
@@ -542,15 +625,18 @@ class HtmlVisualizer:
       viewport.classList.remove("panning");
     }});
 
-    // Smooth Zooming
     viewport.addEventListener("wheel", (e) => {{
       e.preventDefault();
+      if (animFrameId) {{
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+      }}
       const zoomFactor = 1.1;
       const oldScale = scale;
       if (e.deltaY < 0) {{
         scale = Math.min(2.0, scale * zoomFactor);
       }} else {{
-        scale = Math.max(0.2, scale / zoomFactor);
+        scale = Math.max(0.15, scale / zoomFactor);
       }}
       const rect = viewport.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
@@ -561,128 +647,135 @@ class HtmlVisualizer:
     }}, {{ passive: false }});
 
     document.getElementById("btn-zoom-in").addEventListener("click", () => {{
-      scale = Math.min(2.0, scale * 1.2);
-      updateTransform();
+      smoothFlyTo(panX, panY, Math.min(2.0, scale * 1.2), 300);
     }});
     document.getElementById("btn-zoom-out").addEventListener("click", () => {{
-      scale = Math.max(0.2, scale / 1.2);
-      updateTransform();
+      smoothFlyTo(panX, panY, Math.max(0.15, scale / 1.2), 300);
     }});
-    document.getElementById("btn-reset").addEventListener("click", centerOnMainMenu);
-    document.getElementById("btn-center-menu").addEventListener("click", centerOnMainMenu);
+    document.getElementById("btn-reset").addEventListener("click", () => centerOnStart(650));
+    document.getElementById("btn-top-start").addEventListener("click", () => centerOnStart(650));
+    document.getElementById("btn-hub-menu").addEventListener("click", () => centerOnHubMenu(650));
 
-    function centerOnMainMenu() {{
-      scale = 0.85;
-      panX = window.innerWidth / 2 - 165 * scale;
-      panY = window.innerHeight / 2 - 180 * scale;
-      updateTransform();
-      setFocusedCard("cb:menu");
+    function centerOnStart(duration = 650) {{
+      const startPos = nodePositions.get("cmd:/start") || nodePositions.get("cb:menu") || {{ x: 0, y: 0 }};
+      const targetScale = 0.8;
+      const targetPanX = window.innerWidth / 2 - (startPos.x + CARD_W / 2) * targetScale;
+      const targetPanY = 60;
+      smoothFlyTo(targetPanX, targetPanY, targetScale, duration);
+      highlightCard(nodePositions.has("cmd:/start") ? "cmd:/start" : "cb:menu");
+    }}
+
+    function centerOnHubMenu(duration = 650) {{
+      const hubPos = nodePositions.get("cb:menu") || {{ x: 0, y: 0 }};
+      const targetScale = 0.8;
+      const targetPanX = window.innerWidth / 2 - (hubPos.x + CARD_W / 2) * targetScale;
+      const targetPanY = window.innerHeight / 2 - (hubPos.y + 160) * targetScale;
+      smoothFlyTo(targetPanX, targetPanY, targetScale, duration);
+      highlightCard("cb:menu");
     }}
 
     // ==========================================
-    // CLUSTERED / HUB-AND-SPOKE AUTO-LAYOUT
+    // RIGOROUS NON-OVERLAPPING TREE LAYOUT (DAG)
     // ==========================================
-    const nodeElements = new Map();
+    const CARD_W = 320;
+    const CARD_H = 380;
+    const SIBLING_GAP_X = 90;
+    const LEVEL_GAP_Y = 190;
+
     const nodePositions = new Map();
+    const nodeElements = new Map();
 
-    function computeHubLayout() {{
-      nodePositions.clear();
+    // 1. Identify Spanning Tree Roots
+    // Hierarchy: cmd:/start at top -> cb:menu (Dashboard) underneath -> submenus -> actions
+    const rootId = rawData.nodes["cmd:/start"] ? "cmd:/start" : (rawData.nodes["cb:menu"] ? "cb:menu" : Object.keys(rawData.nodes)[0]);
+    const hubId = rawData.nodes["cb:menu"] ? "cb:menu" : rootId;
+    const isStartHubPair = (rootId === "cmd:/start" && hubId === "cb:menu" && rootId !== hubId);
 
-      // 1. Center Hub: Main Menu (0, 0)
-      const centerNodeId = rawData.nodes["cb:menu"] ? "cb:menu" : (rawData.nodes["cmd:/start"] ? "cmd:/start" : Object.keys(rawData.nodes)[0]);
-      nodePositions.set(centerNodeId, {{ x: 0, y: 0 }});
+    // Build forward adjacency list (excluding back buttons to avoid cycles)
+    const forwardChildren = new Map();
+    for (const id of Object.keys(rawData.nodes)) {{
+      forwardChildren.set(id, []);
+    }}
 
-      if (rawData.nodes["cmd:/start"] && centerNodeId !== "cmd:/start") {{
-        nodePositions.set("cmd:/start", {{ x: -40, y: -380 }});
+    // Add entry transition: /start -> cb:menu
+    if (isStartHubPair) {{
+      forwardChildren.get(rootId).push(hubId);
+    }}
+
+    for (const edge of rawData.edges) {{
+      if (edge.is_back) continue;
+      if (edge.from_node_id === edge.to_node_id) continue;
+      // If root is /start and hub is cb:menu, don't duplicate submenus directly off /start; let cb:menu own them!
+      if (isStartHubPair && edge.from_node_id === rootId) continue;
+      if (edge.from_node_id === rootId && edge.to_node_id === hubId) continue; // already added
+
+      const list = forwardChildren.get(edge.from_node_id);
+      if (list && !list.includes(edge.to_node_id) && rawData.nodes[edge.to_node_id]) {{
+        list.push(edge.to_node_id);
       }}
+    }}
 
-      // Clusters configuration
-      // Right wing: Settings and Services
-      const settingsNodes = [];
-      // Left wing: Power and System State
-      const powerNodes = [];
-      // Top wing: Sound and Media
-      const soundNodes = [];
-      // Bottom wing: Apps, Shortcuts and Workspaces
-      const appsNodes = [];
-      // Others / Service handlers
-      const miscNodes = [];
+    // Calculate Subtree Widths recursively (with cycle breaker)
+    function computeSubtreeWidth(nodeId, visitedPath) {{
+      if (visitedPath.has(nodeId)) return CARD_W;
+      const v = new Set(visitedPath);
+      v.add(nodeId);
 
-      for (const [id, node] of Object.entries(rawData.nodes)) {{
-        if (id === centerNodeId || id === "cmd:/start") continue;
+      const children = (forwardChildren.get(nodeId) || []).filter(c => !v.has(c));
+      if (children.length === 0) return CARD_W;
 
-        const idLow = id.toLowerCase();
-        if (idLow.includes("settings") || idLow.includes("monitoring") || idLow.includes("history") || idLow.includes("led") || idLow.includes("console") || idLow.includes("physical") || idLow.includes("activity")) {{
-          settingsNodes.push(id);
-        }} else if (idLow.includes("power") || idLow.includes("shutdown") || idLow.includes("reboot") || idLow.includes("sleep") || idLow.includes("hibernate") || idLow.includes("lock") || idLow.includes("unlock")) {{
-          powerNodes.push(id);
-        }} else if (idLow.includes("sound") || idLow.includes("volume") || idLow.includes("player")) {{
-          soundNodes.push(id);
-        }} else if (idLow.includes("apps") || idLow.includes("workspace") || idLow.includes("screenshot") || idLow.includes("flow_")) {{
-          appsNodes.push(id);
-        }} else {{
-          miscNodes.push(id);
-        }}
-      }}
-
-      const COL_STEP = 440;
-      const ROW_STEP = 460;
-
-      // Place Settings Cluster (Right: X = +480, +920)
-      let setY1 = -ROW_STEP;
-      let setY2 = -ROW_STEP;
-      settingsNodes.forEach((id, idx) => {{
-        if (idx % 2 === 0) {{
-          nodePositions.set(id, {{ x: 480, y: setY1 }});
-          setY1 += ROW_STEP;
-        }} else {{
-          nodePositions.set(id, {{ x: 920, y: setY2 }});
-          setY2 += ROW_STEP;
-        }}
+      let totalW = 0;
+      children.forEach((childId, i) => {{
+        if (i > 0) totalW += SIBLING_GAP_X;
+        totalW += computeSubtreeWidth(childId, v);
       }});
+      return Math.max(CARD_W, totalW);
+    }}
 
-      // Place Power Cluster (Left: X = -480, -920)
-      let powY1 = -ROW_STEP;
-      let powY2 = -ROW_STEP;
-      powerNodes.forEach((id, idx) => {{
-        if (idx % 2 === 0) {{
-          nodePositions.set(id, {{ x: -480, y: powY1 }});
-          powY1 += ROW_STEP;
-        }} else {{
-          nodePositions.set(id, {{ x: -920, y: powY2 }});
-          powY2 += ROW_STEP;
-        }}
-      }});
+    // Place Nodes in Spanning Tree
+    const placedNodes = new Set();
 
-      // Place Sound Cluster (Top: Y = -520, -980)
-      soundNodes.forEach((id, idx) => {{
-        const row = Math.floor(idx / 3);
-        const col = idx % 3;
-        nodePositions.set(id, {{ x: -COL_STEP + col * COL_STEP, y: -520 - row * ROW_STEP }});
-      }});
+    function placeTreeNodes(nodeId, leftX, levelY, visitedPath) {{
+      placedNodes.add(nodeId);
+      const v = new Set(visitedPath);
+      v.add(nodeId);
 
-      // Place Apps Cluster (Bottom: Y = +520, +980)
-      appsNodes.forEach((id, idx) => {{
-        const row = Math.floor(idx / 3);
-        const col = idx % 3;
-        nodePositions.set(id, {{ x: -COL_STEP + col * COL_STEP, y: 520 + row * ROW_STEP }});
-      }});
+      const children = (forwardChildren.get(nodeId) || []).filter(c => !placedNodes.has(c) && !v.has(c));
+      const subtreeW = computeSubtreeWidth(nodeId, visitedPath);
 
-      // Place Misc / Service nodes neatly in an outer column on the far right
-      let miscY = -ROW_STEP;
-      let miscX = 1400;
-      miscNodes.forEach((id, idx) => {{
-        nodePositions.set(id, {{ x: miscX, y: miscY }});
-        miscY += ROW_STEP;
-        if (miscY > 2000) {{
-          miscY = -ROW_STEP;
-          miscX += COL_STEP;
-        }}
+      // Center parent card above its children subtree
+      const myX = leftX + (subtreeW - CARD_W) / 2;
+      nodePositions.set(nodeId, {{ x: myX, y: levelY }});
+
+      let childLeftX = leftX;
+      children.forEach((childId) => {{
+        const childW = computeSubtreeWidth(childId, v);
+        placeTreeNodes(childId, childLeftX, levelY + CARD_H + LEVEL_GAP_Y, v);
+        childLeftX += childW + SIBLING_GAP_X;
       }});
     }}
-    computeHubLayout();
 
-    // Render Cards
+    // Lay out main bot tree from /start
+    placeTreeNodes(rootId, 0, 0, new Set());
+
+    // Lay out any unvisited or isolated nodes in neat columns to the side
+    let unvisitedLeftX = 0;
+    for (const [id, pos] of nodePositions.entries()) {{
+      unvisitedLeftX = Math.max(unvisitedLeftX, pos.x + CARD_W + 240);
+    }}
+
+    let unvisitedY = 0;
+    for (const id of Object.keys(rawData.nodes)) {{
+      if (!placedNodes.has(id)) {{
+        nodePositions.set(id, {{ x: unvisitedLeftX, y: unvisitedY }});
+        unvisitedY += CARD_H + LEVEL_GAP_Y;
+        placedNodes.add(id);
+      }}
+    }}
+
+    // ==========================================
+    // RENDER TELEGRAM CARDS
+    // ==========================================
     for (const [nodeId, node] of Object.entries(rawData.nodes)) {{
       createCard(nodeId, node);
     }}
@@ -691,14 +784,18 @@ class HtmlVisualizer:
       const pos = nodePositions.get(nodeId) || {{ x: 0, y: 0 }};
       const card = document.createElement("div");
       card.className = "tg-card";
-      if (nodeId === "cb:menu" || nodeId === "cmd:/start") {{
-        card.classList.add("is-center-menu");
-      }}
+      if (nodeId === "cmd:/start") card.classList.add("is-root-start");
+      if (nodeId === "cb:menu") card.classList.add("is-hub-menu");
       card.id = `card-${{nodeId}}`;
       card.style.left = `${{pos.x}}px`;
       card.style.top = `${{pos.y}}px`;
 
-      // Header
+      // Top Port for incoming arrows
+      const topPort = document.createElement("div");
+      topPort.className = "card-top-port";
+      card.appendChild(topPort);
+
+      // Card Header
       const header = document.createElement("div");
       header.className = "tg-card-header";
       const icon = nodeId.startsWith("cmd:") ? "⚡" : (nodeId === "cb:menu" ? "📱" : "💬");
@@ -714,14 +811,26 @@ class HtmlVisualizer:
       `;
       card.appendChild(header);
 
-      // Body (Message text)
+      // Message Body
       const body = document.createElement("div");
       body.className = "tg-card-body";
       body.innerHTML = node.text_template || "<i>(Пустой текст)</i>";
       card.appendChild(body);
 
-      // Keyboard
-      if (node.keyboard && node.keyboard.rows && node.keyboard.rows.length) {{
+      // Keyboard with Colored Buttons or Entry Badge
+      const isStartHub = (isStartHubPair && nodeId === rootId);
+      if (isStartHub) {{
+        const badge = document.createElement("div");
+        badge.className = "start-entry-badge";
+        badge.innerHTML = `
+          <div style="font-size:11px; color:#cbd5e1; font-weight:600;">⚡ Точка входа в бота:</div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <code style="background:rgba(234, 179, 8, 0.2); color:#facc15; border:1px solid rgba(234, 179, 8, 0.4); padding:3px 8px; border-radius:4px; font-weight:700;">/start</code>
+            <span style="font-size:11px; color:#94a3b8;">➔ открывает Главное меню</span>
+          </div>
+        `;
+        card.appendChild(badge);
+      }} else if (node.keyboard && node.keyboard.rows && node.keyboard.rows.length) {{
         const kbDiv = document.createElement("div");
         kbDiv.className = "tg-keyboard";
 
@@ -734,20 +843,11 @@ class HtmlVisualizer:
             btnEl.className = "tg-btn";
             btnEl.id = `btn-${{nodeId}}-${{rowIdx}}-${{btnIdx}}`;
 
-            // Telegram color styles
-            if (btn.style) {{
-              btnEl.classList.add(`style-${{btn.style.toLowerCase()}}`);
-            }} else {{
-              const tLow = btn.text.toLowerCase();
-              if (tLow.includes("питание") || tLow.includes("включить") || tLow.includes("разблокировать")) {{
-                btnEl.classList.add("style-success");
-              }} else if (tLow.includes("выключить") || tLow.includes("отмена") || tLow.includes("удалить")) {{
-                btnEl.classList.add("style-danger");
-              }} else if (tLow.includes("скриншот") || tLow.includes("программы") || tLow.includes("звук") || tLow.includes("настройки")) {{
-                btnEl.classList.add("style-primary");
-              }}
-            }}
+            // Color Class
+            const btnStyle = getButtonColorClass(btn);
+            if (btnStyle) btnEl.classList.add(btnStyle);
 
+            // Dead end
             const isDead = rawData.edges.some(e => e.from_node_id === nodeId && e.button_text === btn.text && e.status === "dead_end");
             if (isDead) {{
               btnEl.classList.add("dead-end-btn");
@@ -769,13 +869,14 @@ class HtmlVisualizer:
               <div class="btn-port"></div>
             `;
 
-            btnEl.addEventListener("mouseenter", () => highlightBranch(nodeId, btn.text));
-            btnEl.addEventListener("mouseleave", () => resetBranchHighlight());
+            btnEl.addEventListener("mouseenter", () => highlightEdgeBranch(nodeId, btn.text));
+            btnEl.addEventListener("mouseleave", () => resetEdgeHighlights());
             btnEl.addEventListener("click", (e) => {{
               e.stopPropagation();
               const edge = rawData.edges.find(e => e.from_node_id === nodeId && e.button_text === btn.text);
               if (edge && edge.to_node_id) {{
-                focusCard(edge.to_node_id);
+                pulseEdgeBranch(nodeId, edge.to_node_id, btn.text);
+                focusOnCard(edge.to_node_id, 700);
               }}
             }});
 
@@ -788,21 +889,30 @@ class HtmlVisualizer:
         card.appendChild(kbDiv);
       }}
 
-      // Card click -> set focus
-      card.addEventListener("click", (e) => {{
-        if (e.target.closest(".tg-btn")) return;
-        setFocusedCard(nodeId);
-      }});
-
       setupCardDrag(card, header, nodeId);
       nodesContainer.appendChild(card);
       nodeElements.set(nodeId, card);
     }}
 
+    function getButtonColorClass(btn) {{
+      if (btn.style) return `style-${{btn.style.toLowerCase()}}`;
+      const tLow = btn.text.toLowerCase();
+      if (tLow.includes("питание") || tLow.includes("включить") || tLow.includes("разблокировать")) return "style-success";
+      if (tLow.includes("выключить") || tLow.includes("отмена") || tLow.includes("удалить")) return "style-danger";
+      if (tLow.includes("скриншот") || tLow.includes("программы") || tLow.includes("звук") || tLow.includes("настройки")) return "style-primary";
+      return "";
+    }}
+
+    function getButtonHexColor(btn) {{
+      const cls = getButtonColorClass(btn);
+      if (cls === "style-success") return "#31b545";
+      if (cls === "style-danger") return "#df3f40";
+      if (cls === "style-primary") return "#2ea6ff";
+      return "#38bdf8";
+    }}
+
     function setupCardDrag(card, handle, nodeId) {{
-      let dragStartX, dragStartY;
-      let cardStartX, cardStartY;
-      let isDragging = false;
+      let dragStartX, dragStartY, cardStartX, cardStartY, isDragging = false;
 
       handle.addEventListener("mousedown", (e) => {{
         isDragging = true;
@@ -823,7 +933,7 @@ class HtmlVisualizer:
         card.style.left = `${{newX}}px`;
         card.style.top = `${{newY}}px`;
         nodePositions.set(nodeId, {{ x: newX, y: newY }});
-        renderEdges();
+        renderConnectors();
       }});
 
       window.addEventListener("mouseup", () => {{
@@ -832,22 +942,26 @@ class HtmlVisualizer:
     }}
 
     // ==========================================
-    // OPTIMIZED FAST SVG CONNECTORS
+    // RENDER COLORED & LABELED ARROWS
     // ==========================================
-    const edgePaths = [];
+    const renderedEdgePaths = [];
 
-    function renderEdges() {{
+    function renderConnectors() {{
       const defs = svgLayer.querySelector("defs");
       svgLayer.innerHTML = "";
       svgLayer.appendChild(defs);
-      edgePaths.length = 0;
+      labelsContainer.innerHTML = "";
+      renderedEdgePaths.length = 0;
 
-      // Filter edges based on focusOnlyMode to prevent clutter & lag!
-      const edgesToRender = focusOnlyMode
-        ? rawData.edges.filter(e => e.from_node_id === activeFocusedNode || e.to_node_id === activeFocusedNode)
-        : rawData.edges;
+      // Special entry connector: /start -> cb:menu
+      if (isStartHubPair) {{
+        drawDirectArrow(rootId, hubId, "Запуск бота", "/start", "#10b981", false);
+      }}
 
-      for (const edge of edgesToRender) {{
+      // Standard button transitions
+      for (const edge of rawData.edges) {{
+        if (isStartHubPair && edge.from_node_id === rootId) continue;
+
         const fromCard = nodeElements.get(edge.from_node_id);
         const toCard = nodeElements.get(edge.to_node_id);
         if (!fromCard || !toCard) continue;
@@ -856,73 +970,153 @@ class HtmlVisualizer:
         const toPos = nodePositions.get(edge.to_node_id);
 
         const btnEl = Array.from(fromCard.querySelectorAll(".tg-btn")).find(b => b.textContent.includes(edge.button_text));
-        let fromX, fromY;
+        
+        let strokeColor = "#38bdf8";
+        let markerId = "url(#arrow-default)";
 
-        if (btnEl) {{
-          fromX = fromPos.x + btnEl.offsetLeft + btnEl.offsetWidth;
-          fromY = fromPos.y + btnEl.offsetTop + btnEl.offsetHeight / 2;
-        }} else {{
-          fromX = fromPos.x + 330;
-          fromY = fromPos.y + 35;
+        if (edge.status === "dead_end") {{
+          strokeColor = "#ef4444";
+          markerId = "url(#arrow-dead)";
+        }} else if (edge.is_back) {{
+          strokeColor = "#64748b";
+          markerId = "url(#arrow-back)";
+        }} else if (btnEl) {{
+          const isSuccess = btnEl.classList.contains("style-success");
+          const isDanger = btnEl.classList.contains("style-danger");
+          const isPrimary = btnEl.classList.contains("style-primary");
+          if (isSuccess) {{ strokeColor = "#31b545"; markerId = "url(#arrow-green)"; }}
+          else if (isDanger) {{ strokeColor = "#df3f40"; markerId = "url(#arrow-red)"; }}
+          else if (isPrimary) {{ strokeColor = "#2ea6ff"; markerId = "url(#arrow-blue)"; }}
         }}
 
-        const toX = toPos.x;
-        const toY = toPos.y + 30;
-
-        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        const dx = Math.max(50, Math.abs(toX - fromX) * 0.4);
-
-        let d;
-        if (edge.is_back || toX < fromX) {{
-          const offset = 80;
-          d = `M ${{fromX}} ${{fromY}} C ${{fromX + offset}} ${{fromY}}, ${{toX - offset}} ${{toY}}, ${{toX}} ${{toY}}`;
+        // Accurate coordinates relative to world canvas
+        let fromX, fromY;
+        if (btnEl) {{
+          const bRect = btnEl.getBoundingClientRect();
+          const cRect = fromCard.getBoundingClientRect();
+          const relX = (bRect.right - cRect.left) / scale;
+          const relY = ((bRect.top + bRect.bottom) / 2 - cRect.top) / scale;
+          fromX = fromPos.x + relX;
+          fromY = fromPos.y + relY;
         }} else {{
-          d = `M ${{fromX}} ${{fromY}} C ${{fromX + dx}} ${{fromY}}, ${{toX - dx}} ${{toY}}, ${{toX}} ${{toY}}`;
+          fromX = fromPos.x + CARD_W / 2;
+          fromY = fromPos.y + (fromCard.offsetHeight || CARD_H);
+        }}
+
+        const toX = toPos.x + CARD_W / 2;
+        const toY = toPos.y;
+
+        // Curve path
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        let d;
+        let midX, midY;
+
+        if (edge.is_back || toY < fromY) {{
+          // Return / backward curved loop
+          const loop = 80;
+          d = `M ${{fromX}} ${{fromY}} C ${{fromX + loop}} ${{fromY}}, ${{toX - loop}} ${{toY - 40}}, ${{toX}} ${{toY}}`;
+          midX = (fromX + toX) / 2 + loop / 2;
+          midY = (fromY + toY) / 2 - 20;
+        }} else {{
+          // Clean downward branching curve
+          const dy = (toY - fromY) * 0.5;
+          d = `M ${{fromX}} ${{fromY}} C ${{fromX + 40}} ${{fromY + dy}}, ${{toX}} ${{toY - dy}}, ${{toX}} ${{toY}}`;
+          midX = (fromX + toX) / 2;
+          midY = (fromY + toY) / 2;
         }}
 
         path.setAttribute("d", d);
         let cls = "flow-edge";
-        let marker = "url(#arrow)";
-
-        if (edge.status === "dead_end") {{
-          cls += " dead";
-          marker = "url(#arrow-dead)";
-        }} else if (edge.is_back) {{
-          cls += " back";
-          marker = "url(#arrow-back)";
-        }}
+        if (edge.status === "dead_end") cls += " dead";
+        if (edge.is_back) cls += " back";
 
         path.setAttribute("class", cls);
-        path.setAttribute("marker-end", marker);
+        path.setAttribute("stroke", strokeColor);
+        path.setAttribute("marker-end", markerId);
         path.dataset.from = edge.from_node_id;
         path.dataset.to = edge.to_node_id;
         path.dataset.btn = edge.button_text;
 
         svgLayer.appendChild(path);
-        edgePaths.push(path);
+        renderedEdgePaths.push(path);
+
+        // Edge Floating Label Pill
+        if (showLabels && !edge.is_back && edge.button_text) {{
+          const pill = document.createElement("div");
+          pill.className = "edge-label-pill";
+          pill.style.left = `${{midX}}px`;
+          pill.style.top = `${{midY}}px`;
+          pill.style.borderColor = strokeColor;
+          pill.innerHTML = `<span style="color:${{strokeColor}}">${{edge.button_text}}</span> <code>${{edge.callback_data}}</code>`;
+
+          pill.addEventListener("mouseenter", () => highlightEdgeBranch(edge.from_node_id, edge.button_text));
+          pill.addEventListener("mouseleave", () => resetEdgeHighlights());
+          pill.addEventListener("click", () => {{
+            pulseEdgeBranch(edge.from_node_id, edge.to_node_id, edge.button_text);
+            focusOnCard(edge.to_node_id, 700);
+          }});
+
+          labelsContainer.appendChild(pill);
+        }}
       }}
     }}
 
-    setTimeout(renderEdges, 50);
+    function drawDirectArrow(fromId, toId, text, cb, color, isBack) {{
+      const fromPos = nodePositions.get(fromId);
+      const toPos = nodePositions.get(toId);
+      const fromCard = nodeElements.get(fromId);
+      const toCard = nodeElements.get(toId);
+      if (!fromPos || !toPos || !fromCard || !toCard) return;
 
-    function setFocusedCard(nodeId) {{
-      activeFocusedNode = nodeId;
-      document.querySelectorAll(".tg-card").forEach(c => {{
-        c.classList.remove("highlighted", "dimmed");
-        if (focusOnlyMode && c.id !== `card-${{nodeId}}`) {{
-          // Dim cards not connected to this node
-          const isConnected = rawData.edges.some(e => (e.from_node_id === nodeId && e.to_node_id === c.id.replace("card-", "")) || (e.to_node_id === nodeId && e.from_node_id === c.id.replace("card-", "")));
-          if (!isConnected) c.classList.add("dimmed");
-        }}
-      }});
+      const fromH = fromCard.offsetHeight || CARD_H;
+      const fromX = fromPos.x + CARD_W / 2;
+      const fromY = fromPos.y + fromH;
+      const toX = toPos.x + CARD_W / 2;
+      const toY = toPos.y;
 
-      const card = nodeElements.get(nodeId);
-      if (card) card.classList.add("highlighted");
-      renderEdges();
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      const d = `M ${{fromX}} ${{fromY}} C ${{fromX}} ${{fromY + 50}}, ${{toX}} ${{toY - 50}}, ${{toX}} ${{toY}}`;
+      path.setAttribute("d", d);
+      path.setAttribute("class", "flow-edge");
+      path.setAttribute("stroke", color);
+      path.setAttribute("marker-end", "url(#arrow-green)");
+      path.dataset.from = fromId;
+      path.dataset.to = toId;
+      path.dataset.btn = text;
+      svgLayer.appendChild(path);
+      renderedEdgePaths.push(path);
+
+      if (showLabels) {{
+        const pill = document.createElement("div");
+        pill.className = "edge-label-pill";
+        pill.style.left = `${{(fromX + toX) / 2}}px`;
+        pill.style.top = `${{(fromY + toY) / 2}}px`;
+        pill.style.borderColor = color;
+        pill.innerHTML = `<span style="color:${{color}}">${{text}}</span> <code>${{cb}}</code>`;
+        pill.addEventListener("mouseenter", () => highlightEdgeBranch(fromId, text));
+        pill.addEventListener("mouseleave", () => resetEdgeHighlights());
+        pill.addEventListener("click", () => {{
+          pulseEdgeBranch(fromId, toId, text);
+          focusOnCard(toId, 700);
+        }});
+        labelsContainer.appendChild(pill);
+      }}
     }}
 
-    function highlightBranch(fromId, btnText) {{
-      for (const p of edgePaths) {{
+    setTimeout(renderConnectors, 50);
+
+    function pulseEdgeBranch(fromId, toId, btnText) {{
+      highlightEdgeBranch(fromId, btnText);
+      for (const p of renderedEdgePaths) {{
+        if ((p.dataset.from === fromId && p.dataset.to === toId) || (p.dataset.from === fromId && p.dataset.btn === btnText)) {{
+          p.classList.add("edge-pulse");
+          setTimeout(() => p.classList.remove("edge-pulse"), 1400);
+        }}
+      }}
+    }}
+
+    function highlightEdgeBranch(fromId, btnText) {{
+      for (const p of renderedEdgePaths) {{
         if (p.dataset.from === fromId && p.dataset.btn === btnText) {{
           p.classList.add("highlighted");
           const targetCard = nodeElements.get(p.dataset.to);
@@ -933,32 +1127,27 @@ class HtmlVisualizer:
       }}
     }}
 
-    function resetBranchHighlight() {{
-      for (const p of edgePaths) {{
+    function resetEdgeHighlights() {{
+      for (const p of renderedEdgePaths) {{
         p.classList.remove("highlighted", "dimmed");
       }}
-      document.querySelectorAll(".tg-card").forEach(c => {{
-        if (c.id !== `card-${{activeFocusedNode}}`) c.classList.remove("highlighted");
-      }});
+      document.querySelectorAll(".tg-card.highlighted").forEach(c => c.classList.remove("highlighted"));
     }}
 
-    function focusCard(nodeId) {{
+    function highlightCard(nodeId) {{
+      document.querySelectorAll(".tg-card.highlighted").forEach(c => c.classList.remove("highlighted"));
+      const card = nodeElements.get(nodeId);
+      if (card) card.classList.add("highlighted");
+    }}
+
+    function focusOnCard(nodeId, duration = 650) {{
       const pos = nodePositions.get(nodeId);
       if (!pos) return;
-      setFocusedCard(nodeId);
-      panX = window.innerWidth / 2 - (pos.x + 165) * scale;
-      panY = window.innerHeight / 2 - (pos.y + 140) * scale;
-      updateTransform();
+      highlightCard(nodeId);
+      const targetPanX = window.innerWidth / 2 - (pos.x + CARD_W / 2) * scale;
+      const targetPanY = window.innerHeight / 2 - (pos.y + 160) * scale;
+      smoothFlyTo(targetPanX, targetPanY, scale, duration);
     }}
-
-    // Toggle Focus Mode
-    document.getElementById("btn-focus-mode").addEventListener("click", function() {{
-      focusOnlyMode = !focusOnlyMode;
-      this.classList.toggle("active", focusOnlyMode);
-      this.textContent = focusOnlyMode ? "🎯 Фокус-режим" : "🌐 Все линии";
-      document.querySelectorAll(".tg-card").forEach(c => c.classList.remove("dimmed"));
-      renderEdges();
-    }});
 
     // Search Input
     document.getElementById("search-input").addEventListener("input", (e) => {{
@@ -969,10 +1158,17 @@ class HtmlVisualizer:
         const titleMatch = node.title.toLowerCase().includes(q) || id.toLowerCase().includes(q);
         const btnMatch = node.keyboard && node.keyboard.rows.some(r => r.some(b => b.text.toLowerCase().includes(q) || (b.callback_data && b.callback_data.toLowerCase().includes(q))));
         if (titleMatch || btnMatch) {{
-          focusCard(id);
+          focusOnCard(id, 700);
           break;
         }}
       }}
+    }});
+
+    // Toggle Labels
+    document.getElementById("btn-labels").addEventListener("click", function() {{
+      showLabels = !showLabels;
+      this.classList.toggle("active", showLabels);
+      renderConnectors();
     }});
 
     // Fit View
@@ -981,19 +1177,23 @@ class HtmlVisualizer:
       for (const pos of nodePositions.values()) {{
         minX = Math.min(minX, pos.x);
         minY = Math.min(minY, pos.y);
-        maxX = Math.max(maxX, pos.x + 330);
-        maxY = Math.max(maxY, pos.y + 360);
+        maxX = Math.max(maxX, pos.x + CARD_W);
+        maxY = Math.max(maxY, pos.y + CARD_H);
       }}
       const worldW = maxX - minX + 160;
       const worldH = maxY - minY + 160;
-      scale = Math.min(1.0, Math.max(0.2, Math.min(window.innerWidth / worldW, window.innerHeight / worldH)));
-      panX = (window.innerWidth - (maxX + minX) * scale) / 2;
-      panY = (window.innerHeight - (maxY + minY) * scale) / 2;
-      updateTransform();
+      const targetScale = Math.min(1.0, Math.max(0.12, Math.min(window.innerWidth / worldW, window.innerHeight / worldH)));
+      const targetPanX = (window.innerWidth - (maxX + minX) * targetScale) / 2;
+      const targetPanY = 40;
+      smoothFlyTo(targetPanX, targetPanY, targetScale, 700);
     }});
 
-    // Initial position on page load: CENTER ON MAIN MENU!
-    centerOnMainMenu();
+    window.addEventListener("resize", () => {{
+      renderConnectors();
+    }});
+
+    // Initial View on load: Start at Top!
+    centerOnStart(0);
   </script>
 </body>
 </html>

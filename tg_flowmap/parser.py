@@ -590,21 +590,20 @@ class AstParser:
                                     text_str = (
                                         "💻 <b>PC Control</b>\n\n"
                                         "👤 <b>Сессия</b>\n"
-                                        "├ Статус: ✔ (Active)\n"
-                                        "├ Открыт: Telegram — PC Control\n"
-                                        "└ Музыка: Bunny (Hard) — Hxlkart\n\n"
+                                        "├ Статус: <i>{status}</i>\n"
+                                        "├ Открыт: <i>{active_window}</i>\n"
+                                        "└ Музыка: <i>{media_state}</i>\n\n"
                                         "⚡ <b>Железо</b>\n"
-                                        "├ CPU: 11% · 42°C\n"
-                                        "├ GPU: 35% · 42°C · 35.8 Вт\n"
-                                        "└ RAM: 45.7% · 7.8 ГБ / 17.1 ГБ\n\n"
+                                        "├ CPU: <i>{cpu_usage}</i>\n"
+                                        "├ GPU: <i>{gpu_usage}</i>\n"
+                                        "└ RAM: <i>{ram_usage}</i>\n\n"
                                         "📁 <b>Накопители</b>\n"
-                                        "├ [C:] 70.8% · свободно 149.4 ГБ\n"
-                                        "└ [E:] 80.0% · свободно 51.2 ГБ"
+                                        "└ <i>{disks_usage}</i>"
                                     )
                                 elif "console_card_text" in call_name:
-                                    text_str = "📟 <b>Терминал ПК</b>\n\n├ Цель: Desktop\n├ Оболочка: PowerShell\n└ Статус: Готов к командам"
+                                    text_str = "📟 <b>Терминал ПК</b>\n\n├ Цель: <i>{target}</i>\n├ Оболочка: <i>{shell}</i>\n└ Статус: <i>{status}</i>"
                                 elif "player_card_text" in call_name:
-                                    text_str = "🎵 <b>Медиаплеер</b>\n\n▶ Bunny (Hard) — Hxlkart\n├ Громкость: 75%\n└ Статус: Воспроизведение"
+                                    text_str = "🎵 <b>Медиаплеер</b>\n\n▶ <i>{track_title}</i>\n├ Громкость: <i>{volume}%</i>\n└ Статус: <i>{playback_state}</i>"
                             else:
                                 val = _ast_to_value(arg, local_body_vars, self.global_constants)
                                 if isinstance(val, str) and len(val) > 2 and not text_str and not val.startswith("$"):
