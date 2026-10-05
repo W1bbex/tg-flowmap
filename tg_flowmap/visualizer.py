@@ -126,6 +126,13 @@ class HtmlVisualizer:
       will-change: transform;
     }}
     #viewport.panning {{ cursor: grabbing; }}
+    #viewport.panning #canvas-world * {{
+      pointer-events: none !important;
+      user-select: none !important;
+    }}
+    #viewport.zoomed-out .edge-label-pill {{
+      display: none !important;
+    }}
 
     #canvas-world {{
       position: absolute;
@@ -141,8 +148,6 @@ class HtmlVisualizer:
       position: absolute;
       top: 0;
       left: 0;
-      width: 100000px;
-      height: 100000px;
       pointer-events: none;
       overflow: visible;
       z-index: 10;
@@ -153,17 +158,16 @@ class HtmlVisualizer:
       stroke-width: 2.8px;
       opacity: 0.85;
       pointer-events: stroke;
-      transition: stroke-width 0.15s, opacity 0.15s;
+      transition: stroke-width 0.12s, opacity 0.12s;
     }}
     .flow-edge:hover {{
-      stroke-width: 5px !important;
+      stroke-width: 4.8px !important;
       opacity: 1 !important;
-      filter: drop-shadow(0 0 6px var(--accent));
     }}
     .flow-edge.back {{
       stroke-dasharray: 8, 6;
       stroke-width: 2.2px;
-      opacity: 0.45;
+      opacity: 0.4;
     }}
     .flow-edge.dead {{
       stroke-width: 3px;
@@ -171,19 +175,12 @@ class HtmlVisualizer:
       opacity: 0.95;
     }}
     .flow-edge.highlighted {{
-      stroke-width: 5px !important;
+      stroke-width: 4.8px !important;
       opacity: 1 !important;
-      filter: drop-shadow(0 0 8px var(--accent)) drop-shadow(0 0 14px var(--accent));
     }}
     .flow-edge.edge-pulse {{
-      stroke-width: 5.5px !important;
+      stroke-width: 5.2px !important;
       opacity: 1 !important;
-      filter: drop-shadow(0 0 10px var(--accent)) drop-shadow(0 0 20px var(--accent)) !important;
-      animation: edgePulseAnim 0.7s ease-in-out infinite alternate;
-    }}
-    @keyframes edgePulseAnim {{
-      0% {{ stroke-width: 3.5px; opacity: 0.85; }}
-      100% {{ stroke-width: 6px; opacity: 1; }}
     }}
 
     /* Edge Floating Label Badges */
@@ -260,6 +257,30 @@ class HtmlVisualizer:
     .tg-card.is-hub-menu {{
       border: 2px solid #10b981;
       box-shadow: 0 0 30px rgba(16, 185, 129, 0.35), var(--card-shadow);
+    }}
+    .tg-card.is-utility-card {{
+      border: 1px dashed rgba(239, 68, 68, 0.45);
+      background: #0d1527;
+    }}
+    .utility-badge {{
+      font-size: 10px;
+      color: #f87171;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-weight: 600;
+      white-space: nowrap;
+    }}
+    .cmd-badge {{
+      font-size: 10px;
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-weight: 600;
+      white-space: nowrap;
     }}
     .start-entry-badge {{
       margin: 8px 12px 14px 12px;
@@ -452,6 +473,7 @@ class HtmlVisualizer:
     <div class="brand">🧭 tg-flowmap <span>// граф экранов</span></div>
     <div class="toolbar-actions">
       <input type="text" id="search-input" class="search-box" placeholder="Поиск кнопки или экрана..." />
+      <button class="btn-tool" id="btn-back-edges" title="Показать / скрыть обратные стрелки «Назад» и «В меню»">↩ Возвраты</button>
       <button class="btn-tool active" id="btn-labels" title="Включить / скрыть подписи на стрелочках">🏷️ Подписи</button>
       <button class="btn-tool" id="btn-fit" title="Вписать всё в экран">📐 Вписать всё</button>
     </div>
@@ -459,7 +481,7 @@ class HtmlVisualizer:
 
   <div id="viewport">
     <div id="canvas-world">
-      <svg id="svg-layer" width="100000" height="100000">
+      <svg id="svg-layer">
         <defs>
           <marker id="arrow-green" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1 L 9 5 L 0 9 z" fill="#31b545" />
@@ -525,8 +547,25 @@ class HtmlVisualizer:
     const labelsContainer = document.getElementById("edge-labels-container");
     const nodesContainer = document.getElementById("nodes-container");
 
+    let isTransformPending = false;
+
+    function scheduleTransform() {{
+      if (!isTransformPending) {{
+        isTransformPending = true;
+        requestAnimationFrame(() => {{
+          updateTransform();
+          isTransformPending = false;
+        }});
+      }}
+    }}
+
     function updateTransform() {{
       world.style.transform = `translate3d(${{panX}}px, ${{panY}}px, 0) scale(${{scale}})`;
+      if (scale < 0.35) {{
+        viewport.classList.add("zoomed-out");
+      }} else {{
+        viewport.classList.remove("zoomed-out");
+      }}
     }}
     updateTransform();
 
@@ -590,12 +629,14 @@ class HtmlVisualizer:
       if (!isPanning) return;
       panX = e.clientX - startX;
       panY = e.clientY - startY;
-      updateTransform();
+      scheduleTransform();
     }});
 
     window.addEventListener("mouseup", () => {{
-      isPanning = false;
-      viewport.classList.remove("panning");
+      if (isPanning) {{
+        isPanning = false;
+        viewport.classList.remove("panning");
+      }}
     }});
 
     viewport.addEventListener("wheel", (e) => {{
@@ -616,7 +657,7 @@ class HtmlVisualizer:
       const mouseY = e.clientY - rect.top;
       panX = mouseX - (mouseX - panX) * (scale / oldScale);
       panY = mouseY - (mouseY - panY) * (scale / oldScale);
-      updateTransform();
+      scheduleTransform();
     }}, {{ passive: false }});
 
     document.getElementById("btn-zoom-in").addEventListener("click", () => {{
@@ -646,102 +687,171 @@ class HtmlVisualizer:
     }}
 
     // ==========================================
-    // RIGOROUS NON-OVERLAPPING TREE LAYOUT (DAG)
+    // RIGOROUS NON-OVERLAPPING MULTI-ROOT DAG FOREST
     // ==========================================
     const CARD_W = 320;
     const CARD_H = 380;
-    const SIBLING_GAP_X = 90;
-    const LEVEL_GAP_Y = 190;
+    const SIBLING_GAP_X = 70;
+    const LEVEL_GAP_Y = 160;
 
     const nodePositions = new Map();
     const nodeElements = new Map();
 
-    // 1. Identify Spanning Tree Roots
-    // Hierarchy: cmd:/start at top -> cb:menu (Dashboard) underneath -> submenus -> actions
     const rootId = rawData.nodes["cmd:/start"] ? "cmd:/start" : (rawData.nodes["cb:menu"] ? "cb:menu" : Object.keys(rawData.nodes)[0]);
     const hubId = rawData.nodes["cb:menu"] ? "cb:menu" : rootId;
     const isStartHubPair = (rootId === "cmd:/start" && hubId === "cb:menu" && rootId !== hubId);
 
-    // Build forward adjacency list (excluding back buttons to avoid cycles)
-    const forwardChildren = new Map();
-    for (const id of Object.keys(rawData.nodes)) {{
-      forwardChildren.set(id, []);
+    // ==========================================
+    // UTILITY / SYSTEM TARGETS DEFINITION
+    // ==========================================
+    const UTILITY_TARGETS = new Set([
+      "cb:flow_unlock_retry",
+      "cb:flow_unlock_cancel",
+      "cb:noop",
+      "cb:flow_workspace_cancel"
+    ]);
+
+    // Automatically detect utility callback targets (pure retry/cancel/close handlers)
+    for (const [nodeId, node] of Object.entries(rawData.nodes)) {{
+      const incoming = rawData.edges.filter(e => e.to_node_id === nodeId);
+      if (incoming.length >= 3) {{
+        const allUtility = incoming.every(e => {{
+          const t = (e.button_text || "").toLowerCase();
+          return t.includes("отмена") || t.includes("попробовать") || t.includes("cancel") || t.includes("retry") || t.includes("закрыть") || t.includes("close") || t.includes("выйти");
+        }});
+        if (allUtility) UTILITY_TARGETS.add(nodeId);
+      }}
     }}
 
-    // Add entry transition: /start -> cb:menu
+    // 1. Build Adjacency List (ignoring back buttons & utility popups)
+    const forwardEdgesMap = new Map();
+    for (const id of Object.keys(rawData.nodes)) {{
+      forwardEdgesMap.set(id, []);
+    }}
+
     if (isStartHubPair) {{
-      forwardChildren.get(rootId).push(hubId);
+      forwardEdgesMap.get(rootId).push(hubId);
     }}
 
     for (const edge of rawData.edges) {{
       if (edge.is_back) continue;
       if (edge.from_node_id === edge.to_node_id) continue;
-      // If root is /start and hub is cb:menu, don't duplicate submenus directly off /start; let cb:menu own them!
       if (isStartHubPair && edge.from_node_id === rootId) continue;
-      if (edge.from_node_id === rootId && edge.to_node_id === hubId) continue; // already added
+      if (edge.from_node_id === rootId && edge.to_node_id === hubId) continue;
+      if (UTILITY_TARGETS.has(edge.to_node_id)) continue;
 
-      const list = forwardChildren.get(edge.from_node_id);
+      const list = forwardEdgesMap.get(edge.from_node_id);
       if (list && !list.includes(edge.to_node_id) && rawData.nodes[edge.to_node_id]) {{
         list.push(edge.to_node_id);
       }}
     }}
 
-    // Calculate Subtree Widths recursively (with cycle breaker)
-    function computeSubtreeWidth(nodeId, visitedPath) {{
-      if (visitedPath.has(nodeId)) return CARD_W;
-      const v = new Set(visitedPath);
-      v.add(nodeId);
+    // 2. Build Strict BFS Spanning Forest
+    const treeChildren = new Map();
+    for (const id of Object.keys(rawData.nodes)) {{
+      treeChildren.set(id, []);
+    }}
 
-      const children = (forwardChildren.get(nodeId) || []).filter(c => !v.has(c));
+    const visitedNodes = new Set();
+    const nodeToRoot = new Map();
+    const forestRoots = [];
+
+    function exploreBfsTree(startRoot) {{
+      if (!rawData.nodes[startRoot] || visitedNodes.has(startRoot) || UTILITY_TARGETS.has(startRoot)) return;
+      visitedNodes.add(startRoot);
+      forestRoots.push(startRoot);
+      nodeToRoot.set(startRoot, startRoot);
+      const queue = [startRoot];
+
+      while (queue.length > 0) {{
+        const curr = queue.shift();
+        const children = forwardEdgesMap.get(curr) || [];
+        for (const childId of children) {{
+          if (UTILITY_TARGETS.has(childId)) continue;
+          if (!visitedNodes.has(childId)) {{
+            visitedNodes.add(childId);
+            nodeToRoot.set(childId, startRoot);
+            treeChildren.get(curr).push(childId);
+            queue.push(childId);
+          }}
+        }}
+      }}
+    }}
+
+    // Explore main bot first
+    exploreBfsTree(rootId);
+    if (!visitedNodes.has(hubId)) exploreBfsTree(hubId);
+
+    // Explore secondary bot commands (e.g. /led, /console, /exit, /player)
+    const priorityCmds = ["cmd:/led", "cmd:/console", "cmd:/exit", "cmd:/player", "cmd:/cmd", "cmd:/ps", "cmd:/led_on", "cmd:/led_off"];
+    for (const cmdId of priorityCmds) {{
+      exploreBfsTree(cmdId);
+    }}
+    for (const k of Object.keys(rawData.nodes)) {{
+      if (k.startsWith("cmd:")) exploreBfsTree(k);
+    }}
+
+    // 3. Exact Subtree Width on the Spanning Tree (Zero phantom spaces!)
+    function computeSubtreeWidth(nodeId) {{
+      const children = treeChildren.get(nodeId) || [];
       if (children.length === 0) return CARD_W;
-
       let totalW = 0;
-      children.forEach((childId, i) => {{
+      for (let i = 0; i < children.length; i++) {{
         if (i > 0) totalW += SIBLING_GAP_X;
-        totalW += computeSubtreeWidth(childId, v);
-      }});
+        totalW += computeSubtreeWidth(children[i]);
+      }}
       return Math.max(CARD_W, totalW);
     }}
 
-    // Place Nodes in Spanning Tree
-    const placedNodes = new Set();
-
-    function placeTreeNodes(nodeId, leftX, levelY, visitedPath) {{
-      placedNodes.add(nodeId);
-      const v = new Set(visitedPath);
-      v.add(nodeId);
-
-      const children = (forwardChildren.get(nodeId) || []).filter(c => !placedNodes.has(c) && !v.has(c));
-      const subtreeW = computeSubtreeWidth(nodeId, visitedPath);
-
-      // Center parent card above its children subtree
+    function placeTreeNode(nodeId, leftX, levelY) {{
+      const subtreeW = computeSubtreeWidth(nodeId);
       const myX = leftX + (subtreeW - CARD_W) / 2;
       nodePositions.set(nodeId, {{ x: myX, y: levelY }});
 
       let childLeftX = leftX;
-      children.forEach((childId) => {{
-        const childW = computeSubtreeWidth(childId, v);
-        placeTreeNodes(childId, childLeftX, levelY + CARD_H + LEVEL_GAP_Y, v);
+      const children = treeChildren.get(nodeId) || [];
+      for (const childId of children) {{
+        const childW = computeSubtreeWidth(childId);
+        placeTreeNode(childId, childLeftX, levelY + CARD_H + LEVEL_GAP_Y);
         childLeftX += childW + SIBLING_GAP_X;
-      }});
-    }}
-
-    // Lay out main bot tree from /start
-    placeTreeNodes(rootId, 0, 0, new Set());
-
-    // Lay out any unvisited or isolated nodes in neat columns to the side
-    let unvisitedLeftX = 0;
-    for (const [id, pos] of nodePositions.entries()) {{
-      unvisitedLeftX = Math.max(unvisitedLeftX, pos.x + CARD_W + 240);
-    }}
-
-    let unvisitedY = 0;
-    for (const id of Object.keys(rawData.nodes)) {{
-      if (!placedNodes.has(id)) {{
-        nodePositions.set(id, {{ x: unvisitedLeftX, y: unvisitedY }});
-        unvisitedY += CARD_H + LEVEL_GAP_Y;
-        placedNodes.add(id);
       }}
+    }}
+
+    // 4. Place Trees side-by-side
+    let currentBlockX = 0;
+    for (const r of forestRoots) {{
+      const treeW = computeSubtreeWidth(r);
+      placeTreeNode(r, currentBlockX, 0);
+      currentBlockX += treeW + 200;
+    }}
+
+    // 5. Place Utility Cards in a Dedicated Section
+    const utilNodesList = Object.keys(rawData.nodes).filter(k => UTILITY_TARGETS.has(k));
+    if (utilNodesList.length > 0) {{
+      const utilBlockX = currentBlockX + 80;
+      const cols = 2;
+      utilNodesList.forEach((id, idx) => {{
+        const c = idx % cols;
+        const r = Math.floor(idx / cols);
+        const gx = utilBlockX + c * (CARD_W + 50);
+        const gy = r * (CARD_H + 50);
+        nodePositions.set(id, {{ x: gx, y: gy }});
+      }});
+      currentBlockX = utilBlockX + cols * (CARD_W + 50) + 80;
+    }}
+
+    // 6. Place Remaining Unvisited Orphans in a Compact 4-Column Grid
+    const unvisited = Object.keys(rawData.nodes).filter(k => !visitedNodes.has(k) && !UTILITY_TARGETS.has(k));
+    if (unvisited.length > 0) {{
+      const gridStartX = currentBlockX + 60;
+      const cols = 4;
+      unvisited.forEach((id, idx) => {{
+        const c = idx % cols;
+        const r = Math.floor(idx / cols);
+        const gx = gridStartX + c * (CARD_W + 50);
+        const gy = r * (CARD_H + 50);
+        nodePositions.set(id, {{ x: gx, y: gy }});
+      }});
     }}
 
     // ==========================================
@@ -757,6 +867,7 @@ class HtmlVisualizer:
       card.className = "tg-card";
       if (nodeId === "cmd:/start") card.classList.add("is-root-start");
       if (nodeId === "cb:menu") card.classList.add("is-hub-menu");
+      if (UTILITY_TARGETS.has(nodeId)) card.classList.add("is-utility-card");
       card.id = `card-${{nodeId}}`;
       card.style.left = `${{pos.x}}px`;
       card.style.top = `${{pos.y}}px`;
@@ -769,14 +880,22 @@ class HtmlVisualizer:
       // Card Header
       const header = document.createElement("div");
       header.className = "tg-card-header";
-      const icon = nodeId.startsWith("cmd:") ? "⚡" : (nodeId === "cb:menu" ? "📱" : "💬");
+      const icon = nodeId.startsWith("cmd:") ? "⚡" : (nodeId === "cb:menu" ? "📱" : (UTILITY_TARGETS.has(nodeId) ? "⚙️" : "💬"));
       const srcName = node.source_file ? node.source_file.split(/[/\\\\]/).pop() : "";
       const lineStr = node.line_number ? `:${{node.line_number}}` : "";
+
+      let badgeHtml = "";
+      if (UTILITY_TARGETS.has(nodeId)) {{
+        badgeHtml = `<span class="utility-badge">Попап</span>`;
+      }} else if (nodeId.startsWith("cmd:") && nodeId !== "cmd:/start") {{
+        badgeHtml = `<span class="cmd-badge">Команда</span>`;
+      }}
 
       header.innerHTML = `
         <div class="card-title-group">
           <span style="font-size:13px;">${{icon}}</span>
           <span class="card-screen-title" title="${{node.title}}">${{node.title}}</span>
+          ${{badgeHtml}}
         </div>
         <div class="card-meta">${{srcName}}${{lineStr}}</div>
       `;
@@ -842,11 +961,20 @@ class HtmlVisualizer:
               <div class="btn-port"></div>
             `;
 
-            btnEl.addEventListener("mouseenter", () => highlightEdgeBranch(nodeId, btn.text));
-            btnEl.addEventListener("mouseleave", () => resetEdgeHighlights());
+            btnEl.addEventListener("mouseenter", () => {{
+              highlightEdgeBranch(nodeId, btn.text);
+              showTempTargetArrow(nodeId, btn.text);
+            }});
+            btnEl.addEventListener("mouseleave", () => {{
+              resetEdgeHighlights();
+              removeTempReturnArrow();
+            }});
             btnEl.addEventListener("click", (e) => {{
               e.stopPropagation();
-              const edge = rawData.edges.find(e => e.from_node_id === nodeId && e.button_text === btn.text);
+              const edge = rawData.edges.find(e => 
+                e.from_node_id === nodeId && 
+                ((btn.callback_data && e.callback_data === btn.callback_data) || e.button_text === btn.text)
+              );
               if (edge && edge.to_node_id) {{
                 pulseEdgeBranch(nodeId, edge.to_node_id, btn.text);
                 focusOnCard(edge.to_node_id, 700);
@@ -915,9 +1043,22 @@ class HtmlVisualizer:
     }}
 
     // ==========================================
-    // RENDER COLORED & LABELED ARROWS
+    // RENDER COLORED & LABELED ARROWS WITH BUNDLING
     // ==========================================
     const renderedEdgePaths = [];
+    let showBackEdges = false;
+    let tempReturnPath = null;
+
+    function isReturnOrCross(edge, fromPos, toPos) {{
+      if (edge.is_back) return true;
+      if (toPos.y <= fromPos.y) return true;
+      const fromRoot = nodeToRoot.get(edge.from_node_id);
+      const toRoot = nodeToRoot.get(edge.to_node_id);
+      if ((toRoot === rootId || toRoot === hubId) && fromRoot !== toRoot) {{
+        return true;
+      }}
+      return false;
+    }}
 
     function renderConnectors() {{
       const edgesGroup = document.getElementById("edges-group");
@@ -925,47 +1066,83 @@ class HtmlVisualizer:
       edgesGroup.innerHTML = "";
       labelsContainer.innerHTML = "";
       renderedEdgePaths.length = 0;
+      removeTempReturnArrow();
+
+      // Dynamically size SVG layer to match graph bounds
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const pos of nodePositions.values()) {{
+        minX = Math.min(minX, pos.x);
+        minY = Math.min(minY, pos.y);
+        maxX = Math.max(maxX, pos.x + CARD_W);
+        maxY = Math.max(maxY, pos.y + CARD_H);
+      }}
+      const worldW = Math.max(2000, maxX - minX + 600);
+      const worldH = Math.max(2000, maxY - minY + 600);
+      svgLayer.setAttribute("width", worldW);
+      svgLayer.setAttribute("height", worldH);
+      svgLayer.style.width = worldW + "px";
+      svgLayer.style.height = worldH + "px";
 
       // Special entry connector: /start -> cb:menu
       if (isStartHubPair) {{
         drawDirectArrow(rootId, hubId, "Запуск бота", "/start", "#10b981", false);
       }}
 
-      // Standard button transitions
+      // Group edges by (from_node_id, to_node_id, is_back) to eliminate duplicate fans
+      const bundles = new Map();
       for (const edge of rawData.edges) {{
         if (isStartHubPair && edge.from_node_id === rootId) continue;
+        if (edge.from_node_id === edge.to_node_id) continue;
+        if (UTILITY_TARGETS.has(edge.to_node_id)) continue;
 
-        const fromCard = nodeElements.get(edge.from_node_id);
-        const toCard = nodeElements.get(edge.to_node_id);
         const fromPos = nodePositions.get(edge.from_node_id);
         const toPos = nodePositions.get(edge.to_node_id);
+        if (!fromPos || !toPos) continue;
+
+        const isRet = isReturnOrCross(edge, fromPos, toPos);
+        if (isRet && !showBackEdges) continue;
+
+        const bKey = `${{edge.from_node_id}}:::${{edge.to_node_id}}:::${{!!isRet}}`;
+        if (!bundles.has(bKey)) {{
+          bundles.set(bKey, {{
+            from_node_id: edge.from_node_id,
+            to_node_id: edge.to_node_id,
+            is_back: !!isRet,
+            status: edge.status,
+            edges: []
+          }});
+        }}
+        bundles.get(bKey).edges.push(edge);
+      }}
+
+      for (const bundle of bundles.values()) {{
+        const fromCard = nodeElements.get(bundle.from_node_id);
+        const toCard = nodeElements.get(bundle.to_node_id);
+        const fromPos = nodePositions.get(bundle.from_node_id);
+        const toPos = nodePositions.get(bundle.to_node_id);
         if (!fromCard || !toCard || !fromPos || !toPos) continue;
 
-        const btnEl = Array.from(fromCard.querySelectorAll(".tg-btn")).find(b => 
-          (edge.callback_data && b.dataset.callbackData === edge.callback_data) ||
-          (edge.button_text && b.dataset.btnText === edge.button_text) ||
-          (edge.button_text && b.textContent.includes(edge.button_text))
+        const firstEdge = bundle.edges[0];
+        const btnEl = Array.from(fromCard.querySelectorAll(".tg-btn")).find(b =>
+          (firstEdge.callback_data && b.dataset.callbackData === firstEdge.callback_data) ||
+          (firstEdge.button_text && b.dataset.btnText === firstEdge.button_text)
         );
-        
+
         let strokeColor = "#38bdf8";
         let markerId = "url(#arrow-default)";
 
-        if (edge.status === "dead_end") {{
+        if (bundle.status === "dead_end") {{
           strokeColor = "#ef4444";
           markerId = "url(#arrow-dead)";
-        }} else if (edge.is_back) {{
+        }} else if (bundle.is_back) {{
           strokeColor = "#64748b";
           markerId = "url(#arrow-back)";
         }} else if (btnEl) {{
-          const isSuccess = btnEl.classList.contains("style-success");
-          const isDanger = btnEl.classList.contains("style-danger");
-          const isPrimary = btnEl.classList.contains("style-primary");
-          if (isSuccess) {{ strokeColor = "#31b545"; markerId = "url(#arrow-green)"; }}
-          else if (isDanger) {{ strokeColor = "#df3f40"; markerId = "url(#arrow-red)"; }}
-          else if (isPrimary) {{ strokeColor = "#2ea6ff"; markerId = "url(#arrow-blue)"; }}
+          if (btnEl.classList.contains("style-success")) {{ strokeColor = "#31b545"; markerId = "url(#arrow-green)"; }}
+          else if (btnEl.classList.contains("style-danger")) {{ strokeColor = "#df3f40"; markerId = "url(#arrow-red)"; }}
+          else if (btnEl.classList.contains("style-primary")) {{ strokeColor = "#2ea6ff"; markerId = "url(#arrow-blue)"; }}
         }}
 
-        // Accurate coordinates relative to world canvas
         let fromX = fromPos.x + CARD_W / 2;
         let fromY = fromPos.y + (fromCard.offsetHeight || CARD_H);
         if (btnEl) {{
@@ -982,19 +1159,15 @@ class HtmlVisualizer:
         const toX = toPos.x + CARD_W / 2;
         const toY = toPos.y;
 
-        // Curve path
         const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        let d;
-        let midX, midY;
+        let d, midX, midY;
 
-        if (edge.is_back || toY <= fromY) {{
-          // Return / backward curved loop
+        if (bundle.is_back || toY <= fromY) {{
           const loop = 70;
           d = `M ${{fromX}} ${{fromY}} C ${{fromX + loop}} ${{fromY}}, ${{toX - loop}} ${{toY - 40}}, ${{toX}} ${{toY}}`;
           midX = (fromX + toX) / 2 + loop / 2;
           midY = (fromY + toY) / 2 - 20;
         }} else {{
-          // Clean downward branching curve
           const dy = Math.max(30, (toY - fromY) * 0.5);
           d = `M ${{fromX}} ${{fromY}} C ${{fromX + 40}} ${{fromY + dy}}, ${{toX}} ${{toY - dy}}, ${{toX}} ${{toY}}`;
           midX = (fromX + toX) / 2;
@@ -1003,35 +1176,42 @@ class HtmlVisualizer:
 
         path.setAttribute("d", d);
         let cls = "flow-edge";
-        if (edge.status === "dead_end") cls += " dead";
-        if (edge.is_back) cls += " back";
+        if (bundle.status === "dead_end") cls += " dead";
+        if (bundle.is_back) cls += " back";
 
         path.setAttribute("class", cls);
         path.setAttribute("stroke", strokeColor);
-        path.setAttribute("stroke-width", "2.8");
+        path.setAttribute("stroke-width", bundle.edges.length > 1 ? "3.6" : "2.6");
         path.setAttribute("fill", "none");
         path.setAttribute("marker-end", markerId);
-        path.dataset.from = edge.from_node_id;
-        path.dataset.to = edge.to_node_id;
-        path.dataset.btn = edge.button_text;
+        path.dataset.from = bundle.from_node_id;
+        path.dataset.to = bundle.to_node_id;
+        path.dataset.btn = firstEdge.button_text;
+        path.dataset.buttonList = JSON.stringify(bundle.edges.map(e => e.button_text));
 
         edgesGroup.appendChild(path);
         renderedEdgePaths.push(path);
 
         // Edge Floating Label Pill
-        if (showLabels && !edge.is_back && edge.button_text) {{
+        if (showLabels && !bundle.is_back) {{
           const pill = document.createElement("div");
           pill.className = "edge-label-pill";
           pill.style.left = `${{midX}}px`;
           pill.style.top = `${{midY}}px`;
           pill.style.borderColor = strokeColor;
-          pill.innerHTML = `<span style="color:${{strokeColor}}">${{edge.button_text}}</span> <code>${{edge.callback_data}}</code>`;
 
-          pill.addEventListener("mouseenter", () => highlightEdgeBranch(edge.from_node_id, edge.button_text));
+          if (bundle.edges.length > 1) {{
+            const targetTitle = (rawData.nodes[bundle.to_node_id] ? rawData.nodes[bundle.to_node_id].title : bundle.to_node_id.replace(/^cb:/, ''));
+            pill.innerHTML = `<span style="color:${{strokeColor}}; font-weight:700;">×${{bundle.edges.length}} кнопок</span> <code>${{targetTitle}}</code>`;
+          }} else {{
+            pill.innerHTML = `<span style="color:${{strokeColor}}">${{firstEdge.button_text}}</span> <code>${{firstEdge.callback_data}}</code>`;
+          }}
+
+          pill.addEventListener("mouseenter", () => highlightEdgeBranch(bundle.from_node_id, firstEdge.button_text));
           pill.addEventListener("mouseleave", () => resetEdgeHighlights());
           pill.addEventListener("click", () => {{
-            pulseEdgeBranch(edge.from_node_id, edge.to_node_id, edge.button_text);
-            focusOnCard(edge.to_node_id, 700);
+            pulseEdgeBranch(bundle.from_node_id, bundle.to_node_id, firstEdge.button_text);
+            focusOnCard(bundle.to_node_id, 700);
           }});
 
           labelsContainer.appendChild(pill);
@@ -1085,6 +1265,77 @@ class HtmlVisualizer:
       }}
     }}
 
+    function showTempTargetArrow(fromId, btnText) {{
+      removeTempTargetArrow();
+      const edge = rawData.edges.find(e => 
+        e.from_node_id === fromId && 
+        (e.button_text === btnText || (btnText && btnText.includes(e.button_text)))
+      );
+      if (!edge || !edge.to_node_id) return;
+      const fromPos = nodePositions.get(edge.from_node_id);
+      const toPos = nodePositions.get(edge.to_node_id);
+      if (!fromPos || !toPos) return;
+
+      const isUtil = UTILITY_TARGETS.has(edge.to_node_id);
+      const isRet = isReturnOrCross(edge, fromPos, toPos);
+
+      // Only draw dynamic arrow if the edge is hidden on canvas
+      if (!isUtil && !isRet && !edge.is_back) return;
+      if (isRet && showBackEdges) return; // already visible on canvas
+
+      const fromCard = nodeElements.get(edge.from_node_id);
+      const toCard = nodeElements.get(edge.to_node_id);
+      if (!fromCard || !toCard) return;
+
+      let fromX = fromPos.x + CARD_W / 2;
+      let fromY = fromPos.y + (fromCard.offsetHeight || CARD_H);
+      const btnEl = Array.from(fromCard.querySelectorAll(".tg-btn")).find(b => b.dataset.btnText === btnText);
+      if (btnEl) {{
+        const bRect = btnEl.getBoundingClientRect();
+        const cRect = fromCard.getBoundingClientRect();
+        if (bRect.width > 0 && scale > 0) {{
+          fromX = fromPos.x + (bRect.right - cRect.left) / scale;
+          fromY = fromPos.y + ((bRect.top + bRect.bottom) / 2 - cRect.top) / scale;
+        }}
+      }}
+
+      const toX = toPos.x + CARD_W / 2;
+      const toY = toPos.y;
+
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      let d;
+      if (toY <= fromY) {{
+        const loop = 80;
+        d = `M ${{fromX}} ${{fromY}} C ${{fromX - loop}} ${{fromY - 50}}, ${{toX + loop}} ${{toY + 50}}, ${{toX}} ${{toY}}`;
+      }} else {{
+        const dy = Math.max(30, (toY - fromY) * 0.5);
+        d = `M ${{fromX}} ${{fromY}} C ${{fromX + 40}} ${{fromY + dy}}, ${{toX}} ${{toY - dy}}, ${{toX}} ${{toY}}`;
+      }}
+
+      path.setAttribute("d", d);
+      path.setAttribute("class", "flow-edge back highlighted edge-pulse");
+      path.setAttribute("stroke", isUtil ? "#ef4444" : "#94a3b8");
+      path.setAttribute("stroke-width", "3.6");
+      path.setAttribute("stroke-dasharray", "6, 4");
+      path.setAttribute("fill", "none");
+      path.setAttribute("marker-end", isUtil ? "url(#arrow-dead)" : "url(#arrow-back)");
+      
+      const edgesGroup = document.getElementById("edges-group");
+      if (edgesGroup) {{
+        edgesGroup.appendChild(path);
+        tempReturnPath = path;
+      }}
+      toCard.classList.add("highlighted");
+    }}
+
+    function removeTempTargetArrow() {{
+      if (tempReturnPath && tempReturnPath.parentNode) {{
+        tempReturnPath.parentNode.removeChild(tempReturnPath);
+        tempReturnPath = null;
+      }}
+    }}
+    const removeTempReturnArrow = removeTempTargetArrow;
+
     setTimeout(renderConnectors, 60);
     setTimeout(renderConnectors, 250);
     window.addEventListener("load", renderConnectors);
@@ -1101,7 +1352,12 @@ class HtmlVisualizer:
 
     function highlightEdgeBranch(fromId, btnText) {{
       for (const p of renderedEdgePaths) {{
-        if (p.dataset.from === fromId && p.dataset.btn === btnText) {{
+        let match = false;
+        if (p.dataset.from === fromId) {{
+          if (p.dataset.btn === btnText) match = true;
+          else if (p.dataset.buttonList && p.dataset.buttonList.includes(btnText)) match = true;
+        }}
+        if (match) {{
           p.classList.add("highlighted");
           const targetCard = nodeElements.get(p.dataset.to);
           if (targetCard) targetCard.classList.add("highlighted");
@@ -1155,6 +1411,13 @@ class HtmlVisualizer:
       renderConnectors();
     }});
 
+    // Toggle Back Edges
+    document.getElementById("btn-back-edges").addEventListener("click", function() {{
+      showBackEdges = !showBackEdges;
+      this.classList.toggle("active", showBackEdges);
+      renderConnectors();
+    }});
+
     // Fit View
     document.getElementById("btn-fit").addEventListener("click", () => {{
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -1164,9 +1427,9 @@ class HtmlVisualizer:
         maxX = Math.max(maxX, pos.x + CARD_W);
         maxY = Math.max(maxY, pos.y + CARD_H);
       }}
-      const worldW = maxX - minX + 160;
-      const worldH = maxY - minY + 160;
-      const targetScale = Math.min(1.0, Math.max(0.12, Math.min(window.innerWidth / worldW, window.innerHeight / worldH)));
+      const worldW = maxX - minX + 240;
+      const worldH = maxY - minY + 240;
+      const targetScale = Math.min(1.0, Math.max(0.015, Math.min(window.innerWidth / worldW, window.innerHeight / worldH)));
       const targetPanX = (window.innerWidth - (maxX + minX) * targetScale) / 2;
       const targetPanY = 40;
       smoothFlyTo(targetPanX, targetPanY, targetScale, 700);
