@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -53,6 +53,7 @@ class MessageNode:
     line_number: Optional[int] = None
     trigger_type: str = "callback"  # "command", "callback", "entry"
     trigger_pattern: str = ""
+    aliases: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -64,6 +65,7 @@ class MessageNode:
             "line_number": self.line_number,
             "trigger_type": self.trigger_type,
             "trigger_pattern": self.trigger_pattern,
+            "aliases": self.aliases,
         }
 
 

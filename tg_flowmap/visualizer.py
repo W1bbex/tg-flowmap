@@ -625,47 +625,58 @@ class HtmlVisualizer:
         }}
       }}
 
-      // Place Settings Cluster (Right: X from +460 to +1400)
-      let curY = -280;
+      const COL_STEP = 440;
+      const ROW_STEP = 460;
+
+      // Place Settings Cluster (Right: X = +480, +920)
+      let setY1 = -ROW_STEP;
+      let setY2 = -ROW_STEP;
       settingsNodes.forEach((id, idx) => {{
-        const col = (idx % 2 === 0) ? 500 : 920;
-        const rowY = curY;
-        if (idx % 2 === 1) curY += 380;
-        nodePositions.set(id, {{ x: col, y: rowY }});
+        if (idx % 2 === 0) {{
+          nodePositions.set(id, {{ x: 480, y: setY1 }});
+          setY1 += ROW_STEP;
+        }} else {{
+          nodePositions.set(id, {{ x: 920, y: setY2 }});
+          setY2 += ROW_STEP;
+        }}
       }});
 
-      // Place Power Cluster (Left: X from -500 to -1400)
-      curY = -280;
+      // Place Power Cluster (Left: X = -480, -920)
+      let powY1 = -ROW_STEP;
+      let powY2 = -ROW_STEP;
       powerNodes.forEach((id, idx) => {{
-        const col = (idx % 2 === 0) ? -500 : -920;
-        const rowY = curY;
-        if (idx % 2 === 1) curY += 380;
-        nodePositions.set(id, {{ x: col, y: rowY }});
+        if (idx % 2 === 0) {{
+          nodePositions.set(id, {{ x: -480, y: powY1 }});
+          powY1 += ROW_STEP;
+        }} else {{
+          nodePositions.set(id, {{ x: -920, y: powY2 }});
+          powY2 += ROW_STEP;
+        }}
       }});
 
-      // Place Sound Cluster (Top: Y from -480 to -900)
-      let curX = -180;
-      soundNodes.forEach((id) => {{
-        nodePositions.set(id, {{ x: curX, y: -480 }});
-        curX += 380;
+      // Place Sound Cluster (Top: Y = -520, -980)
+      soundNodes.forEach((id, idx) => {{
+        const row = Math.floor(idx / 3);
+        const col = idx % 3;
+        nodePositions.set(id, {{ x: -COL_STEP + col * COL_STEP, y: -520 - row * ROW_STEP }});
       }});
 
-      // Place Apps Cluster (Bottom: Y from +480 to +900)
-      curX = -360;
+      // Place Apps Cluster (Bottom: Y = +520, +980)
       appsNodes.forEach((id, idx) => {{
-        nodePositions.set(id, {{ x: curX, y: 520 }});
-        curX += 380;
+        const row = Math.floor(idx / 3);
+        const col = idx % 3;
+        nodePositions.set(id, {{ x: -COL_STEP + col * COL_STEP, y: 520 + row * ROW_STEP }});
       }});
 
-      // Place Misc / Service nodes neatly in an outer bottom area
-      let miscX = -600;
-      let miscY = 1000;
+      // Place Misc / Service nodes neatly in an outer column on the far right
+      let miscY = -ROW_STEP;
+      let miscX = 1400;
       miscNodes.forEach((id, idx) => {{
         nodePositions.set(id, {{ x: miscX, y: miscY }});
-        miscX += 380;
-        if (miscX > 1000) {{
-          miscX = -600;
-          miscY += 380;
+        miscY += ROW_STEP;
+        if (miscY > 2000) {{
+          miscY = -ROW_STEP;
+          miscX += COL_STEP;
         }}
       }});
     }}

@@ -320,7 +320,9 @@ class AstParser:
                 for elt in candidate.elts:
                     candidate_elts = [elt]
                     if isinstance(elt, ast.Name) and elt.id in local_vars:
-                        candidate_elts = local_vars[elt.id]
+                        # For a single variable with conditional branches (e.g. bottom_btn in if/elif/else),
+                        # take the primary assignment instead of stuffing all 5 branches into 1 row!
+                        candidate_elts = [local_vars[elt.id][0]]
                     for c_elt in candidate_elts:
                         btn = self._parse_button_element(c_elt, local_vars)
                         if btn:
@@ -430,19 +432,32 @@ class AstParser:
 
         text_template, kb_ref = self._find_message_dispatch(if_node.body)
 
-        for route_key, trigger_type in route_keys:
-            prefix = "cmd:" if trigger_type == "command" else "cb:"
-            node_id = f"{prefix}{route_key}"
-            self._add_node(
-                node_id=node_id,
-                title=route_key,
-                text_template=text_template or f"Экран {route_key}",
-                source_file=filepath,
-                lineno=if_node.lineno,
-                trigger_type=trigger_type,
-                trigger_pattern=route_key,
-                kb_ref=kb_ref,
-            )
+        # Pick the canonical trigger (prefer commands starting with '/' or canonical names like 'menu')
+        canonical_key, trigger_type = route_keys[0]
+        for k, t in route_keys:
+            if k.startswith("/") or k in ("start", "menu", "exit", "quit"):
+                canonical_key, trigger_type = k, t
+                break
+
+        prefix = "cmd:" if trigger_type == "command" else "cb:"
+        node_id = f"{prefix}{canonical_key}"
+        aliases = [k for k, _ in route_keys if k != canonical_key]
+
+        title_str = canonical_key
+        if aliases:
+            title_str = f"{canonical_key} ({', '.join(aliases[:2])})"
+
+        self._add_node(
+            node_id=node_id,
+            title=title_str,
+            text_template=text_template or f"Экран {canonical_key}",
+            source_file=filepath,
+            lineno=if_node.lineno,
+            trigger_type=trigger_type,
+            trigger_pattern=canonical_key,
+            kb_ref=kb_ref,
+            aliases=aliases,
+        )
 
     def _add_node(
         self,
@@ -454,6 +469,7 @@ class AstParser:
         trigger_type: str,
         trigger_pattern: str,
         kb_ref: Optional[str],
+        aliases: Optional[List[str]] = None,
     ) -> None:
         if not text_template or text_template in (f"Экран {title}", f"Handler {title}"):
             t_low = title.lower()
@@ -490,6 +506,7 @@ class AstParser:
             line_number=lineno,
             trigger_type=trigger_type,
             trigger_pattern=trigger_pattern,
+            aliases=aliases or [],
         )
 
         # Resolve keyboard reference (including aliases and leading underscore fallbacks)

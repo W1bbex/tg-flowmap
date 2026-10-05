@@ -169,6 +169,11 @@ class GraphAnalyzer:
         if exact_id in self.nodes:
             return exact_id, "ok"
 
+        # Alias match
+        for node_id, node in self.nodes.items():
+            if hasattr(node, "aliases") and (cb in node.aliases or f"/{cb}" in node.aliases or f"cb:{cb}" in node.aliases):
+                return node_id, "ok"
+
         # Wildcard prefix match in nodes (e.g. volume:* or player_*)
         for node_id in self.nodes:
             if node_id.startswith("cb:") and node_id.endswith("*"):
