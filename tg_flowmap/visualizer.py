@@ -54,61 +54,38 @@ class HtmlVisualizer:
 
     /* Top Navigation Toolbar */
     header {{
-      height: 54px;
-      background: #0f172a;
-      border-bottom: 1px solid #1e293b;
-      padding: 0 20px;
+      height: 48px;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 0 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       z-index: 100;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-    }}
-
-    .logo-area {{
-      display: flex;
-      align-items: center;
-      gap: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
     }}
 
     .brand {{
       font-weight: 700;
-      font-size: 16px;
+      font-size: 15px;
       letter-spacing: -0.3px;
       display: flex;
       align-items: center;
       gap: 6px;
+      color: #f8fafc;
     }}
-    .brand span {{ color: var(--accent); }}
-
-    .tree-legend {{
-      display: flex;
-      gap: 10px;
-      margin-left: 20px;
-    }}
-    .legend-item {{
-      font-size: 11.5px;
-      font-weight: 600;
-      padding: 3px 8px;
-      border-radius: 4px;
-      background: #1e293b;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }}
-    .legend-item.green {{ color: #4ade80; border-left: 3px solid var(--color-success); }}
-    .legend-item.blue {{ color: #60a5fa; border-left: 3px solid var(--color-primary); }}
-    .legend-item.red {{ color: #f87171; border-left: 3px solid var(--color-danger); }}
-    .legend-item.back {{ color: #94a3b8; border-left: 3px solid var(--color-back); }}
+    .brand span {{ color: var(--accent); font-weight: 500; font-size: 13px; }}
 
     .toolbar-actions {{
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }}
 
     .search-box {{
-      background: #090d16;
+      background: rgba(9, 13, 22, 0.7);
       border: 1px solid #334155;
       border-radius: 6px;
       padding: 6px 12px;
@@ -116,8 +93,9 @@ class HtmlVisualizer:
       font-size: 13px;
       width: 220px;
       outline: none;
+      transition: border-color 0.15s, width 0.2s;
     }}
-    .search-box:focus {{ border-color: var(--accent); }}
+    .search-box:focus {{ border-color: var(--accent); width: 260px; }}
 
     .btn-tool {{
       background: #1e293b;
@@ -163,8 +141,8 @@ class HtmlVisualizer:
       position: absolute;
       top: 0;
       left: 0;
-      width: 100%;
-      height: 100%;
+      width: 100000px;
+      height: 100000px;
       pointer-events: none;
       overflow: visible;
       z-index: 10;
@@ -172,31 +150,35 @@ class HtmlVisualizer:
 
     .flow-edge {{
       fill: none;
-      stroke-width: 2.2px;
-      opacity: 0.75;
+      stroke-width: 2.8px;
+      opacity: 0.85;
+      pointer-events: stroke;
       transition: stroke-width 0.15s, opacity 0.15s;
     }}
-    .flow-edge.back {{
-      stroke-dasharray: 6, 5;
-      opacity: 0.35;
-    }}
-    .flow-edge.dead {{
-      stroke-width: 2.5px;
-      stroke-dasharray: 6, 4;
-      opacity: 0.9;
-    }}
-    .flow-edge.highlighted {{
-      stroke-width: 4px !important;
-      opacity: 1 !important;
-      filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.8));
-    }}
-    .flow-edge.dimmed {{
-      opacity: 0.08 !important;
-    }}
-    .flow-edge.edge-pulse {{
+    .flow-edge:hover {{
       stroke-width: 5px !important;
       opacity: 1 !important;
-      filter: drop-shadow(0 0 8px var(--accent)) drop-shadow(0 0 16px var(--accent)) !important;
+      filter: drop-shadow(0 0 6px var(--accent));
+    }}
+    .flow-edge.back {{
+      stroke-dasharray: 8, 6;
+      stroke-width: 2.2px;
+      opacity: 0.45;
+    }}
+    .flow-edge.dead {{
+      stroke-width: 3px;
+      stroke-dasharray: 6, 4;
+      opacity: 0.95;
+    }}
+    .flow-edge.highlighted {{
+      stroke-width: 5px !important;
+      opacity: 1 !important;
+      filter: drop-shadow(0 0 8px var(--accent)) drop-shadow(0 0 14px var(--accent));
+    }}
+    .flow-edge.edge-pulse {{
+      stroke-width: 5.5px !important;
+      opacity: 1 !important;
+      filter: drop-shadow(0 0 10px var(--accent)) drop-shadow(0 0 20px var(--accent)) !important;
       animation: edgePulseAnim 0.7s ease-in-out infinite alternate;
     }}
     @keyframes edgePulseAnim {{
@@ -467,47 +449,38 @@ class HtmlVisualizer:
 </head>
 <body>
   <header>
-    <div class="logo-area">
-      <div class="brand">🧭 tg-flowmap <span>// tree hierarchy</span></div>
-      <div class="tree-legend">
-        <div class="legend-item green">Питание / Включение</div>
-        <div class="legend-item blue">Настройки / Сервисы</div>
-        <div class="legend-item red">Выключение / Опасные</div>
-        <div class="legend-item back">↩ Возврат в меню</div>
-      </div>
-    </div>
+    <div class="brand">🧭 tg-flowmap <span>// граф экранов</span></div>
     <div class="toolbar-actions">
       <input type="text" id="search-input" class="search-box" placeholder="Поиск кнопки или экрана..." />
-      <button class="btn-tool active" id="btn-labels" title="Включить / скрыть подписи на стрелочках">🏷️ Подписи связей</button>
-      <button class="btn-tool" id="btn-top-start">🔝 К началу (/start)</button>
-      <button class="btn-tool" id="btn-hub-menu">📱 К Главному меню</button>
-      <button class="btn-tool" id="btn-fit">📐 Вписать всё</button>
+      <button class="btn-tool active" id="btn-labels" title="Включить / скрыть подписи на стрелочках">🏷️ Подписи</button>
+      <button class="btn-tool" id="btn-fit" title="Вписать всё в экран">📐 Вписать всё</button>
     </div>
   </header>
 
   <div id="viewport">
     <div id="canvas-world">
-      <svg id="svg-layer">
+      <svg id="svg-layer" width="100000" height="100000">
         <defs>
-          <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <marker id="arrow-green" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1 L 9 5 L 0 9 z" fill="#31b545" />
           </marker>
-          <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1 L 9 5 L 0 9 z" fill="#2ea6ff" />
           </marker>
-          <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <marker id="arrow-red" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1 L 9 5 L 0 9 z" fill="#df3f40" />
           </marker>
-          <marker id="arrow-back" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M 0 1 L 9 5 L 0 9 z" fill="#64748b" />
+          <marker id="arrow-back" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#94a3b8" />
           </marker>
-          <marker id="arrow-dead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <marker id="arrow-dead" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1 L 9 5 L 0 9 z" fill="#ef4444" />
           </marker>
-          <marker id="arrow-default" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <marker id="arrow-default" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
             <path d="M 0 1 L 9 5 L 0 9 z" fill="#38bdf8" />
           </marker>
         </defs>
+        <g id="edges-group"></g>
       </svg>
       <div class="edge-labels-container" id="edge-labels-container"></div>
       <div class="nodes-container" id="nodes-container"></div>
@@ -631,12 +604,12 @@ class HtmlVisualizer:
         cancelAnimationFrame(animFrameId);
         animFrameId = null;
       }}
-      const zoomFactor = 1.1;
+      const zoomFactor = 1.15;
       const oldScale = scale;
       if (e.deltaY < 0) {{
-        scale = Math.min(2.0, scale * zoomFactor);
+        scale = Math.min(2.5, scale * zoomFactor);
       }} else {{
-        scale = Math.max(0.15, scale / zoomFactor);
+        scale = Math.max(0.015, scale / zoomFactor);
       }}
       const rect = viewport.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
@@ -647,14 +620,12 @@ class HtmlVisualizer:
     }}, {{ passive: false }});
 
     document.getElementById("btn-zoom-in").addEventListener("click", () => {{
-      smoothFlyTo(panX, panY, Math.min(2.0, scale * 1.2), 300);
+      smoothFlyTo(panX, panY, Math.min(2.5, scale * 1.3), 300);
     }});
     document.getElementById("btn-zoom-out").addEventListener("click", () => {{
-      smoothFlyTo(panX, panY, Math.max(0.15, scale / 1.2), 300);
+      smoothFlyTo(panX, panY, Math.max(0.015, scale / 1.3), 300);
     }});
     document.getElementById("btn-reset").addEventListener("click", () => centerOnStart(650));
-    document.getElementById("btn-top-start").addEventListener("click", () => centerOnStart(650));
-    document.getElementById("btn-hub-menu").addEventListener("click", () => centerOnHubMenu(650));
 
     function centerOnStart(duration = 650) {{
       const startPos = nodePositions.get("cmd:/start") || nodePositions.get("cb:menu") || {{ x: 0, y: 0 }};
@@ -842,6 +813,8 @@ class HtmlVisualizer:
             const btnEl = document.createElement("div");
             btnEl.className = "tg-btn";
             btnEl.id = `btn-${{nodeId}}-${{rowIdx}}-${{btnIdx}}`;
+            btnEl.dataset.btnText = btn.text;
+            if (btn.callback_data) btnEl.dataset.callbackData = btn.callback_data;
 
             // Color Class
             const btnStyle = getButtonColorClass(btn);
@@ -947,9 +920,9 @@ class HtmlVisualizer:
     const renderedEdgePaths = [];
 
     function renderConnectors() {{
-      const defs = svgLayer.querySelector("defs");
-      svgLayer.innerHTML = "";
-      svgLayer.appendChild(defs);
+      const edgesGroup = document.getElementById("edges-group");
+      if (!edgesGroup) return;
+      edgesGroup.innerHTML = "";
       labelsContainer.innerHTML = "";
       renderedEdgePaths.length = 0;
 
@@ -964,12 +937,15 @@ class HtmlVisualizer:
 
         const fromCard = nodeElements.get(edge.from_node_id);
         const toCard = nodeElements.get(edge.to_node_id);
-        if (!fromCard || !toCard) continue;
-
         const fromPos = nodePositions.get(edge.from_node_id);
         const toPos = nodePositions.get(edge.to_node_id);
+        if (!fromCard || !toCard || !fromPos || !toPos) continue;
 
-        const btnEl = Array.from(fromCard.querySelectorAll(".tg-btn")).find(b => b.textContent.includes(edge.button_text));
+        const btnEl = Array.from(fromCard.querySelectorAll(".tg-btn")).find(b => 
+          (edge.callback_data && b.dataset.callbackData === edge.callback_data) ||
+          (edge.button_text && b.dataset.btnText === edge.button_text) ||
+          (edge.button_text && b.textContent.includes(edge.button_text))
+        );
         
         let strokeColor = "#38bdf8";
         let markerId = "url(#arrow-default)";
@@ -990,17 +966,17 @@ class HtmlVisualizer:
         }}
 
         // Accurate coordinates relative to world canvas
-        let fromX, fromY;
+        let fromX = fromPos.x + CARD_W / 2;
+        let fromY = fromPos.y + (fromCard.offsetHeight || CARD_H);
         if (btnEl) {{
           const bRect = btnEl.getBoundingClientRect();
           const cRect = fromCard.getBoundingClientRect();
-          const relX = (bRect.right - cRect.left) / scale;
-          const relY = ((bRect.top + bRect.bottom) / 2 - cRect.top) / scale;
-          fromX = fromPos.x + relX;
-          fromY = fromPos.y + relY;
-        }} else {{
-          fromX = fromPos.x + CARD_W / 2;
-          fromY = fromPos.y + (fromCard.offsetHeight || CARD_H);
+          if (bRect.width > 0 && scale > 0) {{
+            const relX = (bRect.right - cRect.left) / scale;
+            const relY = ((bRect.top + bRect.bottom) / 2 - cRect.top) / scale;
+            fromX = fromPos.x + relX;
+            fromY = fromPos.y + relY;
+          }}
         }}
 
         const toX = toPos.x + CARD_W / 2;
@@ -1011,15 +987,15 @@ class HtmlVisualizer:
         let d;
         let midX, midY;
 
-        if (edge.is_back || toY < fromY) {{
+        if (edge.is_back || toY <= fromY) {{
           // Return / backward curved loop
-          const loop = 80;
+          const loop = 70;
           d = `M ${{fromX}} ${{fromY}} C ${{fromX + loop}} ${{fromY}}, ${{toX - loop}} ${{toY - 40}}, ${{toX}} ${{toY}}`;
           midX = (fromX + toX) / 2 + loop / 2;
           midY = (fromY + toY) / 2 - 20;
         }} else {{
           // Clean downward branching curve
-          const dy = (toY - fromY) * 0.5;
+          const dy = Math.max(30, (toY - fromY) * 0.5);
           d = `M ${{fromX}} ${{fromY}} C ${{fromX + 40}} ${{fromY + dy}}, ${{toX}} ${{toY - dy}}, ${{toX}} ${{toY}}`;
           midX = (fromX + toX) / 2;
           midY = (fromY + toY) / 2;
@@ -1032,12 +1008,14 @@ class HtmlVisualizer:
 
         path.setAttribute("class", cls);
         path.setAttribute("stroke", strokeColor);
+        path.setAttribute("stroke-width", "2.8");
+        path.setAttribute("fill", "none");
         path.setAttribute("marker-end", markerId);
         path.dataset.from = edge.from_node_id;
         path.dataset.to = edge.to_node_id;
         path.dataset.btn = edge.button_text;
 
-        svgLayer.appendChild(path);
+        edgesGroup.appendChild(path);
         renderedEdgePaths.push(path);
 
         // Edge Floating Label Pill
@@ -1062,6 +1040,8 @@ class HtmlVisualizer:
     }}
 
     function drawDirectArrow(fromId, toId, text, cb, color, isBack) {{
+      const edgesGroup = document.getElementById("edges-group");
+      if (!edgesGroup) return;
       const fromPos = nodePositions.get(fromId);
       const toPos = nodePositions.get(toId);
       const fromCard = nodeElements.get(fromId);
@@ -1079,11 +1059,13 @@ class HtmlVisualizer:
       path.setAttribute("d", d);
       path.setAttribute("class", "flow-edge");
       path.setAttribute("stroke", color);
+      path.setAttribute("stroke-width", "3.2");
+      path.setAttribute("fill", "none");
       path.setAttribute("marker-end", "url(#arrow-green)");
       path.dataset.from = fromId;
       path.dataset.to = toId;
       path.dataset.btn = text;
-      svgLayer.appendChild(path);
+      edgesGroup.appendChild(path);
       renderedEdgePaths.push(path);
 
       if (showLabels) {{
@@ -1103,7 +1085,9 @@ class HtmlVisualizer:
       }}
     }}
 
-    setTimeout(renderConnectors, 50);
+    setTimeout(renderConnectors, 60);
+    setTimeout(renderConnectors, 250);
+    window.addEventListener("load", renderConnectors);
 
     function pulseEdgeBranch(fromId, toId, btnText) {{
       highlightEdgeBranch(fromId, btnText);
