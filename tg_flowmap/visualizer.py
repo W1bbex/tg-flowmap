@@ -419,14 +419,34 @@ class HtmlVisualizer:
     /* Connection Ports */
     .btn-port {{
       position: absolute;
-      right: -3px;
-      top: 50%;
-      transform: translateY(-50%);
-      width: 6px;
-      height: 6px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
       background: var(--accent);
-      border: 1px solid #fff;
+      border: 1.5px solid #fff;
+      box-shadow: 0 0 8px currentColor;
+      pointer-events: none;
+      z-index: 10;
+    }}
+    .btn-port.port-left {{
+      left: -4px;
+      top: 50%;
+      transform: translateY(-50%);
+    }}
+    .btn-port.port-right {{
+      right: -4px;
+      top: 50%;
+      transform: translateY(-50%);
+    }}
+    .btn-port.port-down {{
+      bottom: -4px;
+      left: 50%;
+      transform: translateX(-50%);
+    }}
+    .btn-port.port-return {{
+      top: 50%;
+      right: -4px;
+      transform: translateY(-50%);
     }}
     .card-top-port {{
       position: absolute;
@@ -438,6 +458,47 @@ class HtmlVisualizer:
       border-radius: 50%;
       background: #10b981;
       border: 2px solid var(--card-bg);
+    }}
+
+    /* Isolated / Orphan Zone */
+    .isolated-zone {{
+      position: absolute;
+      border: 2px dashed rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      background: rgba(15, 23, 42, 0.4);
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }}
+    .isolated-zone-header {{
+      position: absolute;
+      top: -36px;
+      left: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #94a3b8;
+      white-space: nowrap;
+    }}
+    .isolated-zone-header span {{
+      font-size: 11px;
+      font-weight: 500;
+      color: #64748b;
+    }}
+    .hide-orphans .is-orphan-card,
+    .hide-orphans .isolated-zone {{
+      display: none !important;
+    }}
+    .orphan-badge {{
+      font-size: 10px;
+      color: #94a3b8;
+      background: rgba(148, 163, 184, 0.12);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-weight: 600;
+      white-space: nowrap;
     }}
 
     /* HUD Controls */
@@ -475,6 +536,7 @@ class HtmlVisualizer:
       <input type="text" id="search-input" class="search-box" placeholder="Поиск кнопки или экрана..." />
       <button class="btn-tool" id="btn-back-edges" title="Показать / скрыть обратные стрелки «Назад» и «В меню»">↩ Возвраты</button>
       <button class="btn-tool active" id="btn-labels" title="Включить / скрыть подписи на стрелочках">🏷️ Подписи</button>
+      <button class="btn-tool active" id="btn-orphans" title="Показать или скрыть несвязанные экраны и обработчики">📦 Несвязанные</button>
       <button class="btn-tool" id="btn-fit" title="Вписать всё в экран">📐 Вписать всё</button>
     </div>
   </header>
@@ -842,21 +904,49 @@ class HtmlVisualizer:
 
     // 6. Place Remaining Unvisited Orphans in a Compact 4-Column Grid
     const unvisited = Object.keys(rawData.nodes).filter(k => !visitedNodes.has(k) && !UTILITY_TARGETS.has(k));
+    let orphanBox = null;
     if (unvisited.length > 0) {{
       const gridStartX = currentBlockX + 60;
       const cols = 4;
+      let maxGX = gridStartX;
+      let maxGY = 0;
       unvisited.forEach((id, idx) => {{
         const c = idx % cols;
         const r = Math.floor(idx / cols);
         const gx = gridStartX + c * (CARD_W + 50);
         const gy = r * (CARD_H + 50);
         nodePositions.set(id, {{ x: gx, y: gy }});
+        maxGX = Math.max(maxGX, gx + CARD_W);
+        maxGY = Math.max(maxGY, gy + CARD_H);
       }});
+      orphanBox = {{
+        x: gridStartX - 25,
+        y: -10,
+        w: maxGX - gridStartX + 50,
+        h: maxGY + 60,
+        count: unvisited.length,
+      }};
     }}
 
     // ==========================================
     // RENDER TELEGRAM CARDS
     // ==========================================
+    if (orphanBox) {{
+      const zoneDiv = document.createElement("div");
+      zoneDiv.className = "isolated-zone";
+      zoneDiv.style.left = `${{orphanBox.x}}px`;
+      zoneDiv.style.top = `${{orphanBox.y}}px`;
+      zoneDiv.style.width = `${{orphanBox.w}}px`;
+      zoneDiv.style.height = `${{orphanBox.h}}px`;
+      zoneDiv.innerHTML = `
+        <div class="isolated-zone-header">
+          <span>📦 Несвязанные экраны и обработчики (${{orphanBox.count}})</span>
+          <span>// в коде bot.py нет инлайн-кнопок перехода к этим экранам</span>
+        </div>
+      `;
+      nodesContainer.appendChild(zoneDiv);
+    }}
+
     for (const [nodeId, node] of Object.entries(rawData.nodes)) {{
       createCard(nodeId, node);
     }}
@@ -868,6 +958,7 @@ class HtmlVisualizer:
       if (nodeId === "cmd:/start") card.classList.add("is-root-start");
       if (nodeId === "cb:menu") card.classList.add("is-hub-menu");
       if (UTILITY_TARGETS.has(nodeId)) card.classList.add("is-utility-card");
+      if (unvisited.includes(nodeId)) card.classList.add("is-orphan-card");
       card.id = `card-${{nodeId}}`;
       card.style.left = `${{pos.x}}px`;
       card.style.top = `${{pos.y}}px`;
@@ -887,6 +978,8 @@ class HtmlVisualizer:
       let badgeHtml = "";
       if (UTILITY_TARGETS.has(nodeId)) {{
         badgeHtml = `<span class="utility-badge">Попап</span>`;
+      }} else if (unvisited.includes(nodeId)) {{
+        badgeHtml = `<span class="orphan-badge">Не связан</span>`;
       }} else if (nodeId.startsWith("cmd:") && nodeId !== "cmd:/start") {{
         badgeHtml = `<span class="cmd-badge">Команда</span>`;
       }}
@@ -1143,33 +1236,75 @@ class HtmlVisualizer:
           else if (btnEl.classList.contains("style-primary")) {{ strokeColor = "#2ea6ff"; markerId = "url(#arrow-blue)"; }}
         }}
 
-        let fromX = fromPos.x + CARD_W / 2;
-        let fromY = fromPos.y + (fromCard.offsetHeight || CARD_H);
-        if (btnEl) {{
-          const bRect = btnEl.getBoundingClientRect();
-          const cRect = fromCard.getBoundingClientRect();
-          if (bRect.width > 0 && scale > 0) {{
-            const relX = (bRect.right - cRect.left) / scale;
-            const relY = ((bRect.top + bRect.bottom) / 2 - cRect.top) / scale;
-            fromX = fromPos.x + relX;
-            fromY = fromPos.y + relY;
-          }}
-        }}
-
         const toX = toPos.x + CARD_W / 2;
         const toY = toPos.y;
+        let fromX = fromPos.x + CARD_W / 2;
+        let fromY = fromPos.y + (fromCard.offsetHeight || CARD_H);
+        let portDirection = "down";
+
+        if (btnEl) {{
+          let cur = btnEl;
+          let offLeft = 0;
+          let offTop = 0;
+          while (cur && cur !== fromCard) {{
+            offLeft += cur.offsetLeft;
+            offTop += cur.offsetTop;
+            cur = cur.offsetParent;
+          }}
+          const bW = btnEl.offsetWidth || 140;
+          const bH = btnEl.offsetHeight || 34;
+
+          const toCenterX = toPos.x + CARD_W / 2;
+
+          if (bundle.is_back || toY <= fromY) {{
+            portDirection = "return";
+            fromX = fromPos.x + offLeft + bW;
+            fromY = fromPos.y + offTop + bH / 2;
+          }} else if (toCenterX < fromPos.x - 20) {{
+            portDirection = "left";
+            fromX = fromPos.x + offLeft;
+            fromY = fromPos.y + offTop + bH / 2;
+          }} else if (toCenterX > fromPos.x + CARD_W + 20) {{
+            portDirection = "right";
+            fromX = fromPos.x + offLeft + bW;
+            fromY = fromPos.y + offTop + bH / 2;
+          }} else {{
+            portDirection = "down";
+            fromX = fromPos.x + offLeft + bW / 2;
+            fromY = fromPos.y + offTop + bH;
+          }}
+
+          const portEl = btnEl.querySelector(".btn-port");
+          if (portEl) {{
+            portEl.className = `btn-port port-${{portDirection}}`;
+            portEl.style.color = strokeColor;
+            portEl.style.backgroundColor = strokeColor;
+          }}
+        }}
 
         const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
         let d, midX, midY;
 
-        if (bundle.is_back || toY <= fromY) {{
-          const loop = 70;
-          d = `M ${{fromX}} ${{fromY}} C ${{fromX + loop}} ${{fromY}}, ${{toX - loop}} ${{toY - 40}}, ${{toX}} ${{toY}}`;
+        if (portDirection === "return" || bundle.is_back || toY <= fromY) {{
+          const loop = Math.max(50, Math.min(120, Math.abs(toX - fromX) * 0.4));
+          d = `M ${{fromX}} ${{fromY}} C ${{fromX + loop}} ${{fromY}}, ${{toX - loop}} ${{toY - 50}}, ${{toX}} ${{toY}}`;
           midX = (fromX + toX) / 2 + loop / 2;
-          midY = (fromY + toY) / 2 - 20;
+          midY = (fromY + toY) / 2 - 25;
+        }} else if (portDirection === "left") {{
+          const cdx = Math.min(90, Math.max(30, (fromX - toX) * 0.35));
+          const cdy = Math.max(40, (toY - fromY) * 0.4);
+          d = `M ${{fromX}} ${{fromY}} C ${{fromX - cdx}} ${{fromY}}, ${{toX}} ${{toY - cdy}}, ${{toX}} ${{toY}}`;
+          midX = (fromX + toX) / 2 - cdx * 0.3;
+          midY = (fromY + toY) / 2;
+        }} else if (portDirection === "right") {{
+          const cdx = Math.min(90, Math.max(30, (toX - fromX) * 0.35));
+          const cdy = Math.max(40, (toY - fromY) * 0.4);
+          d = `M ${{fromX}} ${{fromY}} C ${{fromX + cdx}} ${{fromY}}, ${{toX}} ${{toY - cdy}}, ${{toX}} ${{toY}}`;
+          midX = (fromX + toX) / 2 + cdx * 0.3;
+          midY = (fromY + toY) / 2;
         }} else {{
-          const dy = Math.max(30, (toY - fromY) * 0.5);
-          d = `M ${{fromX}} ${{fromY}} C ${{fromX + 40}} ${{fromY + dy}}, ${{toX}} ${{toY - dy}}, ${{toX}} ${{toY}}`;
+          const dy = Math.max(35, (toY - fromY) * 0.5);
+          d = `M ${{fromX}} ${{fromY}} C ${{fromX}} ${{fromY + dy}}, ${{toX}} ${{toY - dy}}, ${{toX}} ${{toY}}`;
           midX = (fromX + toX) / 2;
           midY = (fromY + toY) / 2;
         }}
@@ -1291,12 +1426,18 @@ class HtmlVisualizer:
       let fromY = fromPos.y + (fromCard.offsetHeight || CARD_H);
       const btnEl = Array.from(fromCard.querySelectorAll(".tg-btn")).find(b => b.dataset.btnText === btnText);
       if (btnEl) {{
-        const bRect = btnEl.getBoundingClientRect();
-        const cRect = fromCard.getBoundingClientRect();
-        if (bRect.width > 0 && scale > 0) {{
-          fromX = fromPos.x + (bRect.right - cRect.left) / scale;
-          fromY = fromPos.y + ((bRect.top + bRect.bottom) / 2 - cRect.top) / scale;
+        let cur = btnEl;
+        let offLeft = 0;
+        let offTop = 0;
+        while (cur && cur !== fromCard) {{
+          offLeft += cur.offsetLeft;
+          offTop += cur.offsetTop;
+          cur = cur.offsetParent;
         }}
+        const bW = btnEl.offsetWidth || 140;
+        const bH = btnEl.offsetHeight || 34;
+        fromX = fromPos.x + offLeft + bW;
+        fromY = fromPos.y + offTop + bH / 2;
       }}
 
       const toX = toPos.x + CARD_W / 2;
@@ -1418,14 +1559,30 @@ class HtmlVisualizer:
       renderConnectors();
     }});
 
+    // Toggle Orphans
+    let showOrphans = true;
+    const btnOrphans = document.getElementById("btn-orphans");
+    if (btnOrphans) {{
+      btnOrphans.addEventListener("click", function() {{
+        showOrphans = !showOrphans;
+        this.classList.toggle("active", showOrphans);
+        world.classList.toggle("hide-orphans", !showOrphans);
+        renderConnectors();
+      }});
+    }}
+
     // Fit View
     document.getElementById("btn-fit").addEventListener("click", () => {{
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      for (const pos of nodePositions.values()) {{
+      for (const [id, pos] of nodePositions.entries()) {{
+        if (!showOrphans && unvisited.includes(id)) continue;
         minX = Math.min(minX, pos.x);
         minY = Math.min(minY, pos.y);
         maxX = Math.max(maxX, pos.x + CARD_W);
         maxY = Math.max(maxY, pos.y + CARD_H);
+      }}
+      if (!isFinite(minX)) {{
+        minX = 0; minY = 0; maxX = 1200; maxY = 800;
       }}
       const worldW = maxX - minX + 240;
       const worldH = maxY - minY + 240;

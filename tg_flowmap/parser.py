@@ -195,11 +195,17 @@ class AstParser:
 
     def _extract_keyboards(self, tree: ast.AST, filepath: Path) -> None:
         """Finds functions, class methods, or module assignments constructing Telegram keyboards."""
-        for node in ast.walk(tree):
+        for node in getattr(tree, "body", []):
             if isinstance(node, ast.FunctionDef):
                 kb = self._parse_keyboard_function(node, filepath)
                 if kb and kb.rows:
                     self.keyboards[node.name] = kb
+            elif isinstance(node, ast.ClassDef):
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef):
+                        kb = self._parse_keyboard_function(item, filepath)
+                        if kb and kb.rows:
+                            self.keyboards[item.name] = kb
             elif isinstance(node, ast.Assign):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
@@ -413,7 +419,7 @@ class AstParser:
                     route_val = str(val)
 
             if route_val:
-                text_template, kb_ref = self._find_message_dispatch(case.body)
+                text_template, kb_ref, inline_kb = self._find_message_dispatch(case.body, filepath)
                 self._add_node(
                     node_id=f"cb:{route_val}",
                     title=route_val,
@@ -423,6 +429,7 @@ class AstParser:
                     trigger_type="callback",
                     trigger_pattern=route_val,
                     kb_ref=kb_ref,
+                    inline_kb=inline_kb,
                 )
 
     def _inspect_if_route(self, if_node: ast.If, filepath: Path) -> None:
@@ -430,7 +437,7 @@ class AstParser:
         if not route_keys:
             return
 
-        text_template, kb_ref = self._find_message_dispatch(if_node.body)
+        text_template, kb_ref, inline_kb = self._find_message_dispatch(if_node.body, filepath)
 
         # Pick the canonical trigger (prefer commands starting with '/' or canonical names like 'menu')
         canonical_key, trigger_type = route_keys[0]
@@ -456,6 +463,7 @@ class AstParser:
             trigger_type=trigger_type,
             trigger_pattern=canonical_key,
             kb_ref=kb_ref,
+            inline_kb=inline_kb,
             aliases=aliases,
         )
 
@@ -469,6 +477,7 @@ class AstParser:
         trigger_type: str,
         trigger_pattern: str,
         kb_ref: Optional[str],
+        inline_kb: Optional[Keyboard] = None,
         aliases: Optional[List[str]] = None,
     ) -> None:
         if not text_template or text_template in (f"Экран {title}", f"Handler {title}"):
@@ -509,8 +518,10 @@ class AstParser:
             aliases=aliases or [],
         )
 
-        # Resolve keyboard reference (including aliases and leading underscore fallbacks)
-        if kb_ref:
+        # Attach local inline keyboard or resolve keyboard reference
+        if inline_kb and inline_kb.rows:
+            node.keyboard = inline_kb
+        elif kb_ref:
             resolved_kb = (
                 self.keyboards.get(kb_ref)
                 or self.keyboards.get(self.keyboard_aliases.get(kb_ref, ""))
@@ -565,15 +576,20 @@ class AstParser:
 
         return routes
 
-    def _find_message_dispatch(self, body: List[ast.stmt]) -> Tuple[str, Optional[str]]:
+    def _find_message_dispatch(
+        self, body: List[ast.stmt], filepath: Path
+    ) -> Tuple[str, Optional[str], Optional[Keyboard]]:
         text_str = ""
         kb_name = None
+        inline_kb: Optional[Keyboard] = None
 
         local_body_vars: Dict[str, Any] = {}
+        local_body_nodes: Dict[str, ast.AST] = {}
         for stmt in body:
             if isinstance(stmt, ast.Assign):
                 for target in stmt.targets:
                     if isinstance(target, ast.Name):
+                        local_body_nodes[target.id] = stmt.value
                         val = _ast_to_value(stmt.value, local_body_vars, self.global_constants)
                         if val is not None:
                             local_body_vars[target.id] = val
@@ -614,12 +630,35 @@ class AstParser:
                                 if isinstance(val, str) and val:
                                     text_str = val
                             elif kw.arg == "reply_markup":
-                                if isinstance(kw.value, ast.Call):
-                                    kb_name = getattr(kw.value.func, "attr", None) or getattr(kw.value.func, "id", "")
+                                lineno = getattr(kw.value, "lineno", getattr(subnode, "lineno", 0))
+                                if isinstance(kw.value, ast.Dict):
+                                    inline_kb = self._parse_keyboard_expr(
+                                        kw.value,
+                                        f"inline_{lineno}",
+                                        filepath,
+                                        lineno,
+                                        {k: [v] for k, v in local_body_nodes.items()},
+                                    )
                                 elif isinstance(kw.value, ast.Name):
-                                    kb_name = kw.value.id
+                                    var_id = kw.value.id
+                                    if var_id in local_body_nodes:
+                                        node_val = local_body_nodes[var_id]
+                                        if isinstance(node_val, ast.Call):
+                                            kb_name = getattr(node_val.func, "attr", None) or getattr(node_val.func, "id", "")
+                                        else:
+                                            inline_kb = self._parse_keyboard_expr(
+                                                node_val,
+                                                f"{var_id}_{lineno}",
+                                                filepath,
+                                                lineno,
+                                                {k: [v] for k, v in local_body_nodes.items()},
+                                            )
+                                    else:
+                                        kb_name = var_id
+                                elif isinstance(kw.value, ast.Call):
+                                    kb_name = getattr(kw.value.func, "attr", None) or getattr(kw.value.func, "id", "")
 
-        return text_str, kb_name
+        return text_str, kb_name, inline_kb
 
     def _inspect_decorated_handler(self, func_node: ast.FunctionDef, filepath: Path) -> None:
         """aiogram / telebot decorators: @dp.callback_query(...) or @dp.message(Command('start'))"""
@@ -631,7 +670,7 @@ class AstParser:
                 if match:
                     route_name = match.group(1)
 
-                text_template, kb_ref = self._find_message_dispatch(func_node.body)
+                text_template, kb_ref, inline_kb = self._find_message_dispatch(func_node.body, filepath)
                 node_id = f"cb:{route_name}"
                 self._add_node(
                     node_id=node_id,
@@ -642,9 +681,10 @@ class AstParser:
                     trigger_type="callback",
                     trigger_pattern=route_name,
                     kb_ref=kb_ref,
+                    inline_kb=inline_kb,
                 )
             elif "message" in dec_str.lower() and "start" in dec_str.lower():
-                text_template, kb_ref = self._find_message_dispatch(func_node.body)
+                text_template, kb_ref, inline_kb = self._find_message_dispatch(func_node.body, filepath)
                 node_id = "cmd:/start"
                 self._add_node(
                     node_id=node_id,
@@ -655,4 +695,5 @@ class AstParser:
                     trigger_type="command",
                     trigger_pattern="/start",
                     kb_ref=kb_ref,
+                    inline_kb=inline_kb,
                 )
