@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tg-flowmap"
+version = "0.1.0"
+description = "Static AST visualizer, flow mapper, and dead-end linter for Telegram bots"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "w1bbex" }]
+keywords = ["telegram", "telegram-bot", "ast", "flowchart", "visualizer", "linter"]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+tg-flowmap = "tg_flowmap.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tg_flowmap*"]
