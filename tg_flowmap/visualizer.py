@@ -247,7 +247,7 @@ class HtmlVisualizer:
       display: flex;
       flex-direction: column;
       user-select: text;
-      contain: layout style paint;
+      contain: layout style;
       transition: border-color 0.15s, box-shadow 0.15s, opacity 0.15s;
     }}
     .tg-card.is-root-start {{
@@ -416,48 +416,45 @@ class HtmlVisualizer:
       color: #fca5a5 !important;
     }}
 
-    /* Connection Ports */
-    .btn-port {{
+    /* Connection Ports on Outer Card Boundary */
+    .card-edge-port {{
       position: absolute;
-      width: 8px;
-      height: 8px;
+      width: 9px;
+      height: 9px;
       border-radius: 50%;
       background: var(--accent);
       border: 1.5px solid #fff;
-      box-shadow: 0 0 8px currentColor;
+      box-shadow: 0 0 10px currentColor;
       pointer-events: none;
-      z-index: 10;
+      z-index: 30;
+      transition: transform 0.15s, box-shadow 0.15s;
     }}
-    .btn-port.port-left {{
-      left: -4px;
-      top: 50%;
+    .card-edge-port.port-left {{
+      left: -5px;
       transform: translateY(-50%);
     }}
-    .btn-port.port-right {{
-      right: -4px;
-      top: 50%;
+    .card-edge-port.port-right {{
+      right: -5px;
       transform: translateY(-50%);
     }}
-    .btn-port.port-down {{
-      bottom: -4px;
+    .card-edge-port.port-down {{
+      bottom: -5px;
       left: 50%;
       transform: translateX(-50%);
-    }}
-    .btn-port.port-return {{
-      top: 50%;
-      right: -4px;
-      transform: translateY(-50%);
     }}
     .card-top-port {{
       position: absolute;
       top: -5px;
       left: 50%;
       transform: translateX(-50%);
-      width: 8px;
-      height: 8px;
+      width: 9px;
+      height: 9px;
       border-radius: 50%;
-      background: #10b981;
-      border: 2px solid var(--card-bg);
+      background: #38bdf8;
+      border: 1.5px solid #fff;
+      box-shadow: 0 0 10px currentColor;
+      pointer-events: none;
+      z-index: 30;
     }}
 
     /* Isolated / Orphan Zone */
@@ -808,6 +805,35 @@ class HtmlVisualizer:
       }}
     }}
 
+    function getChildColumn(parentId, childId) {{
+      const node = rawData.nodes[parentId];
+      if (!node || !node.keyboard || !node.keyboard.rows) return 0;
+      for (let r = 0; r < node.keyboard.rows.length; r++) {{
+        const row = node.keyboard.rows[r];
+        for (let c = 0; c < row.length; c++) {{
+          const btn = row[c];
+          const match = rawData.edges.some(e =>
+            e.from_node_id === parentId &&
+            e.to_node_id === childId &&
+            ((btn.callback_data && e.callback_data === btn.callback_data) || e.button_text === btn.text)
+          );
+          if (match) {{
+            if (row.length === 1) return r === 0 ? 0 : 1;
+            return c;
+          }}
+        }}
+      }}
+      return 0;
+    }}
+
+    // Sort children of multi-column cards so column 0 (left) comes first, column 1 (right) comes second
+    for (const [id, kids] of forwardEdgesMap.entries()) {{
+      const node = rawData.nodes[id];
+      if (node && node.keyboard && node.keyboard.rows && node.keyboard.rows.some(r => r.length > 1)) {{
+        kids.sort((a, b) => getChildColumn(id, a) - getChildColumn(id, b));
+      }}
+    }}
+
     // 2. Build Strict BFS Spanning Forest
     const treeChildren = new Map();
     for (const id of Object.keys(rawData.nodes)) {{
@@ -853,10 +879,29 @@ class HtmlVisualizer:
       if (k.startsWith("cmd:")) exploreBfsTree(k);
     }}
 
-    // 3. Exact Subtree Width on the Spanning Tree (Zero phantom spaces!)
+    // 3. Exact Subtree Width on the Spanning Tree with Bifurcation Support
     function computeSubtreeWidth(nodeId) {{
       const children = treeChildren.get(nodeId) || [];
       if (children.length === 0) return CARD_W;
+
+      const leftKids = children.filter(c => getChildColumn(nodeId, c) === 0);
+      const rightKids = children.filter(c => getChildColumn(nodeId, c) === 1);
+
+      if (leftKids.length > 0 && rightKids.length > 0) {{
+        let leftW = 0;
+        for (let i = 0; i < leftKids.length; i++) {{
+          if (i > 0) leftW += SIBLING_GAP_X;
+          leftW += computeSubtreeWidth(leftKids[i]);
+        }}
+        let rightW = 0;
+        for (let i = 0; i < rightKids.length; i++) {{
+          if (i > 0) rightW += SIBLING_GAP_X;
+          rightW += computeSubtreeWidth(rightKids[i]);
+        }}
+        const centerGap = Math.max(SIBLING_GAP_X, CARD_W + 80);
+        return leftW + centerGap + rightW;
+      }}
+
       let totalW = 0;
       for (let i = 0; i < children.length; i++) {{
         if (i > 0) totalW += SIBLING_GAP_X;
@@ -866,16 +911,44 @@ class HtmlVisualizer:
     }}
 
     function placeTreeNode(nodeId, leftX, levelY) {{
-      const subtreeW = computeSubtreeWidth(nodeId);
-      const myX = leftX + (subtreeW - CARD_W) / 2;
-      nodePositions.set(nodeId, {{ x: myX, y: levelY }});
-
-      let childLeftX = leftX;
       const children = treeChildren.get(nodeId) || [];
-      for (const childId of children) {{
-        const childW = computeSubtreeWidth(childId);
-        placeTreeNode(childId, childLeftX, levelY + CARD_H + LEVEL_GAP_Y);
-        childLeftX += childW + SIBLING_GAP_X;
+      const leftKids = children.filter(c => getChildColumn(nodeId, c) === 0);
+      const rightKids = children.filter(c => getChildColumn(nodeId, c) === 1);
+
+      if (leftKids.length > 0 && rightKids.length > 0) {{
+        let leftW = 0;
+        for (let i = 0; i < leftKids.length; i++) {{
+          if (i > 0) leftW += SIBLING_GAP_X;
+          leftW += computeSubtreeWidth(leftKids[i]);
+        }}
+        const centerGap = Math.max(SIBLING_GAP_X, CARD_W + 80);
+        const myX = leftX + leftW + centerGap / 2 - CARD_W / 2;
+        nodePositions.set(nodeId, {{ x: myX, y: levelY }});
+
+        let childLeftX = leftX;
+        for (const childId of leftKids) {{
+          const childW = computeSubtreeWidth(childId);
+          placeTreeNode(childId, childLeftX, levelY + CARD_H + LEVEL_GAP_Y);
+          childLeftX += childW + SIBLING_GAP_X;
+        }}
+
+        let childRightX = leftX + leftW + centerGap;
+        for (const childId of rightKids) {{
+          const childW = computeSubtreeWidth(childId);
+          placeTreeNode(childId, childRightX, levelY + CARD_H + LEVEL_GAP_Y);
+          childRightX += childW + SIBLING_GAP_X;
+        }}
+      }} else {{
+        const subtreeW = computeSubtreeWidth(nodeId);
+        const myX = leftX + (subtreeW - CARD_W) / 2;
+        nodePositions.set(nodeId, {{ x: myX, y: levelY }});
+
+        let childLeftX = leftX;
+        for (const childId of children) {{
+          const childW = computeSubtreeWidth(childId);
+          placeTreeNode(childId, childLeftX, levelY + CARD_H + LEVEL_GAP_Y);
+          childLeftX += childW + SIBLING_GAP_X;
+        }}
       }}
     }}
 
@@ -885,6 +958,11 @@ class HtmlVisualizer:
       const treeW = computeSubtreeWidth(r);
       placeTreeNode(r, currentBlockX, 0);
       currentBlockX += treeW + 200;
+    }}
+
+    // Align start entry directly over hub menu
+    if (isStartHubPair && nodePositions.has(rootId) && nodePositions.has(hubId)) {{
+      nodePositions.get(rootId).x = nodePositions.get(hubId).x;
     }}
 
     // 5. Place Utility Cards in a Dedicated Section
@@ -1049,10 +1127,7 @@ class HtmlVisualizer:
               }}
             }}
 
-            btnEl.innerHTML = `
-              <span>${{iconGlyph ? `${{iconGlyph}} ` : ""}}${{btn.text}}</span>
-              <div class="btn-port"></div>
-            `;
+            btnEl.innerHTML = `<span>${{iconGlyph ? `${{iconGlyph}} ` : ""}}${{btn.text}}</span>`;
 
             btnEl.addEventListener("mouseenter", () => {{
               highlightEdgeBranch(nodeId, btn.text);
@@ -1160,6 +1235,7 @@ class HtmlVisualizer:
       labelsContainer.innerHTML = "";
       renderedEdgePaths.length = 0;
       removeTempReturnArrow();
+      document.querySelectorAll(".card-edge-port").forEach(p => p.remove());
 
       // Dynamically size SVG layer to match graph bounds
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -1253,33 +1329,63 @@ class HtmlVisualizer:
           }}
           const bW = btnEl.offsetWidth || 140;
           const bH = btnEl.offsetHeight || 34;
+          const btnCenterY = offTop + bH / 2;
+
+          const rowEl = btnEl.closest(".tg-row");
+          const rowButtons = rowEl ? Array.from(rowEl.querySelectorAll(".tg-btn")) : [btnEl];
+          const btnIdxInRow = rowButtons.indexOf(btnEl);
+          const isLeftCol = (rowButtons.length > 1 && btnIdxInRow === 0);
+          const isRightCol = (rowButtons.length > 1 && btnIdxInRow === rowButtons.length - 1);
 
           const toCenterX = toPos.x + CARD_W / 2;
+          const fromCardCenterX = fromPos.x + CARD_W / 2;
 
-          if (bundle.is_back || toY <= fromY) {{
+          if (bundle.is_back || toY <= fromPos.y) {{
             portDirection = "return";
-            fromX = fromPos.x + offLeft + bW;
-            fromY = fromPos.y + offTop + bH / 2;
-          }} else if (toCenterX < fromPos.x - 20) {{
+            fromX = fromPos.x + CARD_W;
+            fromY = fromPos.y + btnCenterY;
+          }} else if (isLeftCol) {{
             portDirection = "left";
-            fromX = fromPos.x + offLeft;
-            fromY = fromPos.y + offTop + bH / 2;
-          }} else if (toCenterX > fromPos.x + CARD_W + 20) {{
+            fromX = fromPos.x;
+            fromY = fromPos.y + btnCenterY;
+          }} else if (isRightCol) {{
             portDirection = "right";
-            fromX = fromPos.x + offLeft + bW;
-            fromY = fromPos.y + offTop + bH / 2;
+            fromX = fromPos.x + CARD_W;
+            fromY = fromPos.y + btnCenterY;
+          }} else if (toCenterX < fromCardCenterX - 30) {{
+            portDirection = "left";
+            fromX = fromPos.x;
+            fromY = fromPos.y + btnCenterY;
+          }} else if (toCenterX > fromCardCenterX + 30) {{
+            portDirection = "right";
+            fromX = fromPos.x + CARD_W;
+            fromY = fromPos.y + btnCenterY;
           }} else {{
             portDirection = "down";
             fromX = fromPos.x + offLeft + bW / 2;
-            fromY = fromPos.y + offTop + bH;
+            fromY = fromPos.y + (fromCard.offsetHeight || CARD_H);
           }}
 
-          const portEl = btnEl.querySelector(".btn-port");
-          if (portEl) {{
-            portEl.className = `btn-port port-${{portDirection}}`;
+          let portEl = fromCard.querySelector(`.card-edge-port[data-btn-id="${{btnEl.id}}"]`);
+          if (!portEl) {{
+            portEl = document.createElement("div");
+            portEl.className = `card-edge-port port-${{portDirection}}`;
+            portEl.dataset.btnId = btnEl.id;
             portEl.style.color = strokeColor;
             portEl.style.backgroundColor = strokeColor;
+            if (portDirection === "left" || portDirection === "right" || portDirection === "return") {{
+              portEl.style.top = `${{btnCenterY}}px`;
+            }} else if (portDirection === "down") {{
+              portEl.style.left = `${{offLeft + bW / 2}}px`;
+            }}
+            fromCard.appendChild(portEl);
           }}
+        }}
+
+        const topPort = toCard.querySelector(".card-top-port");
+        if (topPort && !bundle.is_back) {{
+          topPort.style.backgroundColor = strokeColor;
+          topPort.style.color = strokeColor;
         }}
 
         const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -1291,13 +1397,13 @@ class HtmlVisualizer:
           midX = (fromX + toX) / 2 + loop / 2;
           midY = (fromY + toY) / 2 - 25;
         }} else if (portDirection === "left") {{
-          const cdx = Math.min(90, Math.max(30, (fromX - toX) * 0.35));
+          const cdx = Math.min(100, Math.max(35, Math.abs(fromX - toX) * 0.35));
           const cdy = Math.max(40, (toY - fromY) * 0.4);
           d = `M ${{fromX}} ${{fromY}} C ${{fromX - cdx}} ${{fromY}}, ${{toX}} ${{toY - cdy}}, ${{toX}} ${{toY}}`;
           midX = (fromX + toX) / 2 - cdx * 0.3;
           midY = (fromY + toY) / 2;
         }} else if (portDirection === "right") {{
-          const cdx = Math.min(90, Math.max(30, (toX - fromX) * 0.35));
+          const cdx = Math.min(100, Math.max(35, Math.abs(toX - fromX) * 0.35));
           const cdy = Math.max(40, (toY - fromY) * 0.4);
           d = `M ${{fromX}} ${{fromY}} C ${{fromX + cdx}} ${{fromY}}, ${{toX}} ${{toY - cdy}}, ${{toX}} ${{toY}}`;
           midX = (fromX + toX) / 2 + cdx * 0.3;
@@ -1369,6 +1475,21 @@ class HtmlVisualizer:
       const toX = toPos.x + CARD_W / 2;
       const toY = toPos.y;
 
+      let portEl = fromCard.querySelector(".card-edge-port.port-down");
+      if (!portEl) {{
+        portEl = document.createElement("div");
+        portEl.className = "card-edge-port port-down";
+        portEl.style.color = color;
+        portEl.style.backgroundColor = color;
+        portEl.style.left = "50%";
+        fromCard.appendChild(portEl);
+      }}
+      const topPort = toCard.querySelector(".card-top-port");
+      if (topPort) {{
+        topPort.style.backgroundColor = color;
+        topPort.style.color = color;
+      }}
+
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       const d = `M ${{fromX}} ${{fromY}} C ${{fromX}} ${{fromY + 50}}, ${{toX}} ${{toY - 50}}, ${{toX}} ${{toY}}`;
       path.setAttribute("d", d);
@@ -1434,10 +1555,19 @@ class HtmlVisualizer:
           offTop += cur.offsetTop;
           cur = cur.offsetParent;
         }}
-        const bW = btnEl.offsetWidth || 140;
         const bH = btnEl.offsetHeight || 34;
-        fromX = fromPos.x + offLeft + bW;
-        fromY = fromPos.y + offTop + bH / 2;
+        const rowEl = btnEl.closest(".tg-row");
+        const rowButtons = rowEl ? Array.from(rowEl.querySelectorAll(".tg-btn")) : [btnEl];
+        const btnIdxInRow = rowButtons.indexOf(btnEl);
+        const isLeftCol = (rowButtons.length > 1 && btnIdxInRow === 0);
+        const btnCenterY = offTop + bH / 2;
+
+        if (isLeftCol) {{
+          fromX = fromPos.x;
+        }} else {{
+          fromX = fromPos.x + CARD_W;
+        }}
+        fromY = fromPos.y + btnCenterY;
       }}
 
       const toX = toPos.x + CARD_W / 2;
@@ -1597,7 +1727,14 @@ class HtmlVisualizer:
     }});
 
     // Initial View on load: Start at Top!
-    centerOnStart(0);
+    if (window.location.hash === "#fit") {{
+      setTimeout(() => {{
+        const btnFit = document.getElementById("btn-fit");
+        if (btnFit) btnFit.click();
+      }}, 150);
+    }} else {{
+      centerOnStart(0);
+    }}
   </script>
 </body>
 </html>
