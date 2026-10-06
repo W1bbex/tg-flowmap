@@ -66,76 +66,79 @@ def fetch_custom_emojis(
 
     ctx = ssl.create_default_context()
 
-    # Telegram Bot API allows requesting up to 100 custom_emoji_ids per call
-    batch = list(missing_ids)[:100]
-    api_url = f"https://api.telegram.org/bot{clean_token}/getCustomEmojiStickers"
-    req_body = json.dumps({"custom_emoji_ids": batch}).encode("utf-8")
+    missing_list = list(missing_ids)
+    batches = [missing_list[i : i + 100] for i in range(0, len(missing_list), 100)]
 
-    try:
-        req = urllib.request.Request(
-            api_url,
-            data=req_body,
-            headers={"Content-Type": "application/json", "User-Agent": "tg-flowmap/0.1.0"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, context=ctx, timeout=timeout) as resp:
-            resp_data = json.loads(resp.read().decode("utf-8"))
+    for batch in batches:
+        api_url = f"https://api.telegram.org/bot{clean_token}/getCustomEmojiStickers"
+        req_body = json.dumps({"custom_emoji_ids": batch}).encode("utf-8")
 
-        if not resp_data.get("ok"):
-            desc = resp_data.get("description", "Unknown error")
-            print(f"[WARN] Telegram API error: {desc}", file=sys.stderr)
-            return result_map
+        try:
+            req = urllib.request.Request(
+                api_url,
+                data=req_body,
+                headers={"Content-Type": "application/json", "User-Agent": "tg-flowmap/0.1.0"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, context=ctx, timeout=timeout) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
 
-        stickers = resp_data.get("result", [])
-        for sticker in stickers:
-            custom_id = str(sticker.get("custom_emoji_id") or "")
-            if not custom_id:
+            if not resp_data.get("ok"):
+                desc = resp_data.get("description", "Unknown error")
+                print(f"[WARN] Telegram API error: {desc}", file=sys.stderr)
                 continue
 
-            # Pick thumbnail if available for compact size, otherwise main file
-            file_id = None
-            if sticker.get("thumbnail") and sticker["thumbnail"].get("file_id"):
-                file_id = sticker["thumbnail"]["file_id"]
-            elif sticker.get("file_id"):
-                file_id = sticker["file_id"]
-
-            if not file_id:
-                continue
-
-            # Call getFile to resolve file_path
-            try:
-                get_file_url = f"https://api.telegram.org/bot{clean_token}/getFile?file_id={file_id}"
-                file_req = urllib.request.Request(
-                    get_file_url,
-                    headers={"User-Agent": "tg-flowmap/0.1.0"},
-                )
-                with urllib.request.urlopen(file_req, context=ctx, timeout=timeout) as f_resp:
-                    f_data = json.loads(f_resp.read().decode("utf-8"))
-
-                if not f_data.get("ok"):
+            stickers = resp_data.get("result", [])
+            for sticker in stickers:
+                custom_id = str(sticker.get("custom_emoji_id") or "")
+                if not custom_id:
                     continue
 
-                file_path_str = f_data["result"]["file_path"]
-                dl_url = f"https://api.telegram.org/file/bot{clean_token}/{file_path_str}"
+                # Pick thumbnail if available for compact size, otherwise main file
+                file_id = None
+                if sticker.get("thumbnail") and sticker["thumbnail"].get("file_id"):
+                    file_id = sticker["thumbnail"]["file_id"]
+                elif sticker.get("file_id"):
+                    file_id = sticker["file_id"]
 
-                dl_req = urllib.request.Request(dl_url, headers={"User-Agent": "tg-flowmap/0.1.0"})
-                with urllib.request.urlopen(dl_req, context=ctx, timeout=timeout) as dl_resp:
-                    raw_bytes = dl_resp.read()
+                if not file_id:
+                    continue
 
-                # Determine extension
-                ext = Path(file_path_str).suffix.lower() or ".webp"
-                target_file = cache_path / f"{custom_id}{ext}"
-                target_file.write_bytes(raw_bytes)
+                # Call getFile to resolve file_path
+                try:
+                    get_file_url = f"https://api.telegram.org/bot{clean_token}/getFile?file_id={file_id}"
+                    file_req = urllib.request.Request(
+                        get_file_url,
+                        headers={"User-Agent": "tg-flowmap/0.1.0"},
+                    )
+                    with urllib.request.urlopen(file_req, context=ctx, timeout=timeout) as f_resp:
+                        f_data = json.loads(f_resp.read().decode("utf-8"))
 
-                mime = "image/svg+xml" if ext == ".svg" else f"image/{ext.lstrip('.')}"
-                b64 = base64.b64encode(raw_bytes).decode("ascii")
-                data_url = f"data:{mime};base64,{b64}"
-                result_map[custom_id] = data_url
+                    if not f_data.get("ok"):
+                        continue
 
-            except Exception:
-                continue
+                    file_path_str = f_data["result"]["file_path"]
+                    dl_url = f"https://api.telegram.org/file/bot{clean_token}/{file_path_str}"
 
-    except Exception as e:
-        print(f"[WARN] Не удалось загрузить стикеры Telegram: {e}", file=sys.stderr)
+                    dl_req = urllib.request.Request(dl_url, headers={"User-Agent": "tg-flowmap/0.1.0"})
+                    with urllib.request.urlopen(dl_req, context=ctx, timeout=timeout) as dl_resp:
+                        raw_bytes = dl_resp.read()
+
+                    # Determine extension
+                    ext = Path(file_path_str).suffix.lower() or ".webp"
+                    target_file = cache_path / f"{custom_id}{ext}"
+                    target_file.write_bytes(raw_bytes)
+
+                    mime = "image/svg+xml" if ext == ".svg" else f"image/{ext.lstrip('.')}"
+                    b64 = base64.b64encode(raw_bytes).decode("ascii")
+                    data_url = f"data:{mime};base64,{b64}"
+                    result_map[custom_id] = data_url
+
+                except Exception:
+                    continue
+
+        except Exception as e:
+            err_msg = str(e).replace(clean_token, "[REDACTED_TOKEN]")
+            print(f"[WARN] Не удалось загрузить стикеры Telegram: {err_msg}", file=sys.stderr)
 
     return result_map

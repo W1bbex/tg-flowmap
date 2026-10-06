@@ -48,6 +48,7 @@ def run_analysis(
     output_json: Path | None = None,
     strict: bool = False,
     bot_token: str | None = None,
+    parser: AstParser | None = None,
 ) -> int:
     if sys.platform == "win32":
         try:
@@ -60,11 +61,12 @@ def run_analysis(
         print(f"[ERROR] Целевой путь не существует: {target_path}", file=sys.stderr)
         return 1
 
-    parser = AstParser()
-    if target_path.is_file():
-        parser.parse_file(target_path)
-    else:
-        parser.parse_dir(target_path)
+    if parser is None:
+        parser = AstParser()
+        if target_path.is_file():
+            parser.parse_file(target_path)
+        else:
+            parser.parse_dir(target_path)
 
     analyzer = GraphAnalyzer(
         parser.nodes,
@@ -135,7 +137,8 @@ def run_analysis(
 
     dead_ends = stats.get("dead_ends", 0)
     broken_emojis = stats.get("broken_emojis", 0)
-    if strict and (dead_ends > 0 or broken_emojis > 0):
+    has_errors = any(i.severity == "error" for i in bot_map.issues) or (dead_ends > 0) or (broken_emojis > 0)
+    if strict and has_errors:
         print("\n[STRICT MODE] Обнаружены критические ошибки! Выход с кодом 1.")
         return 1
 

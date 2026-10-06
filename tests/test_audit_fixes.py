@@ -201,3 +201,113 @@ def test_reply_keyboard_text_routing():
     edges = [e for e in bot_map.edges if e.from_node_id == "cmd:/start" and e.to_node_id == "cmd:/help"]
     assert len(edges) == 1
     assert edges[0].button_text == "/help"
+
+
+def test_reply_keyboard_back_button_detection():
+    nodes = {
+        "cb:settings": MessageNode(
+            id="cb:settings",
+            title="Settings",
+            keyboard=Keyboard(
+                name="settings_reply",
+                keyboard_type="reply",
+                rows=[
+                    [Button(text="« Назад")],
+                ],
+            ),
+        ),
+        "cmd:/start": MessageNode(id="cmd:/start", title="Start Screen"),
+    }
+    analyzer = GraphAnalyzer(nodes, {})
+    bot_map = analyzer.build_map()
+
+    missing_backs = [i for i in bot_map.issues if i.issue_type == "missing_back" and i.node_id == "cb:settings"]
+    assert len(missing_backs) == 0
+
+
+def test_underscore_callback_prefix_resolution():
+    nodes = {
+        "cb:menu": MessageNode(
+            id="cb:menu",
+            title="Menu",
+            keyboard=Keyboard(
+                name="menu_kb",
+                rows=[
+                    [Button(text="Купить 42", callback_data="buy_42")],
+                ],
+            ),
+        ),
+        "cb:buy_*": MessageNode(id="cb:buy_*", title="Buy Handler"),
+    }
+    analyzer = GraphAnalyzer(nodes, {})
+    bot_map = analyzer.build_map()
+
+    edge = next(e for e in bot_map.edges if e.button_text == "Купить 42")
+    assert edge.to_node_id == "cb:buy_*"
+    assert edge.status == "dynamic"
+
+
+def test_ast_evaluator_preserves_regular_lists_and_numbers():
+    import ast
+    # 1. Regular list
+    list_expr = ast.parse("[1, 2, 3]", mode="eval").body
+    res = evaluate_ast_node(list_expr, {})
+    assert res == [1, 2, 3]
+
+    # 2. Number cast
+    int_expr = ast.parse("int('42')", mode="eval").body
+    num_res = evaluate_ast_node(int_expr, {})
+    assert num_res == 42
+    assert isinstance(num_res, int)
+
+
+def test_parser_finds_edit_text_dispatch():
+    code = '''
+def main_kb():
+    return {"inline_keyboard": [[{"text": "OK", "callback_data": "ok"}]]}
+
+@dp.callback_query(F.data == "refresh_data")
+async def on_refresh(call: CallbackQuery):
+    await call.message.edit_text("Обновлённый текст", reply_markup=main_kb())
+'''
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(code)
+        p = Path(f.name)
+
+    try:
+        parser = AstParser()
+        parser.parse_file(p)
+        assert "cb:refresh_data" in parser.nodes
+        node = parser.nodes["cb:refresh_data"]
+        assert node.text_template == "Обновлённый текст"
+        assert node.keyboard is not None
+        assert node.keyboard.name == "main_kb"
+    finally:
+        p.unlink(missing_ok=True)
+
+
+def test_strict_mode_fails_on_any_error_severity():
+    from tg_flowmap.cli import run_analysis
+    code = '''
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+def bad_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        # 70 bytes exceeds Telegram 64 bytes callback_data limit
+        [InlineKeyboardButton(text="Too Long", callback_data="a" * 70)]
+    ])
+
+@dp.message(Command("start"))
+async def start_cmd(message):
+    await message.answer("Hello", reply_markup=bad_kb())
+'''
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(code)
+        p = Path(f.name)
+
+    try:
+        exit_code = run_analysis(p, strict=True)
+        assert exit_code == 1
+    finally:
+        p.unlink(missing_ok=True)
+

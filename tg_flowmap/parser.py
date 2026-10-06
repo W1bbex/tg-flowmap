@@ -584,33 +584,6 @@ class AstParser:
         inline_kb: Optional[Keyboard] = None,
         aliases: Optional[List[str]] = None,
     ) -> None:
-        if not text_template or text_template in (f"Экран {title}", f"Handler {title}"):
-            t_low = title.lower()
-            if "sound" in t_low or "volume" in t_low:
-                text_template = "🔊 <b>Управление звуком</b>\n\nВыберите уровень громкости или действие:"
-            elif "led" in t_low:
-                text_template = "💡 <b>Подсветка (ARGB)</b>\n\nВыберите пресет или настройте яркость:"
-            elif "power" in t_low:
-                text_template = "⚡ <b>Управление питанием</b>\n\nВыберите режим работы ПК:"
-            elif "settings" in t_low:
-                text_template = "⚙️ <b>Настройки и сервисы</b>\n\nВыберите нужный раздел:"
-            elif "apps" in t_low:
-                text_template = "🎮 <b>Быстрый запуск программ</b>\n\nВыберите приложение:"
-            elif "history" in t_low:
-                text_template = "📊 <b>История и графики</b>\n\nВыберите метрику телеметрии:"
-            elif "monitoring" in t_low:
-                text_template = "📈 <b>Мониторинг железа</b>\n\nСводка загрузки процессора и видеокарты:"
-            elif "reboot" in t_low:
-                text_template = "🔄 <b>Перезагрузка ПК</b>\n\nВы уверены, что хотите перезагрузить компьютер?"
-            elif "shutdown" in t_low:
-                text_template = "🛑 <b>Выключение ПК</b>\n\nВыберите тип или подтвердите выключение:"
-            elif "sleep" in t_low:
-                text_template = "💤 <b>Спящий режим</b>\n\nПеревести компьютер в спящий режим?"
-            elif "workspace" in t_low:
-                text_template = "🚀 <b>Рабочий сетап</b>\n\nЗапустить рабочий набор приложений и VPN?"
-            elif "physical" in t_low:
-                text_template = "🕹 <b>Физическая кнопка</b>\n\nУправление жестами и кодами разблокировки:"
-
         node = MessageNode(
             id=node_id,
             title=title,
@@ -641,11 +614,11 @@ class AstParser:
         # Classify node_type
         if node_id.startswith("cmd:") or trigger_type == "command":
             node.node_type = "command"
+        elif node.keyboard and node.keyboard.rows and len(node.keyboard.rows) > 0:
+            node.node_type = "message"
         elif any(k in node_id.lower() for k in ("cancel", "retry", "noop", "close")):
             node.node_type = "popup"
             node.is_alert = True
-        elif node.keyboard and node.keyboard.rows and len(node.keyboard.rows) > 0:
-            node.node_type = "message"
         else:
             node.node_type = "callback"
 
@@ -746,7 +719,7 @@ class AstParser:
             for subnode in ast.walk(stmt):
                 if isinstance(subnode, ast.Call):
                     func_name = getattr(subnode.func, "attr", None) or getattr(subnode.func, "id", "")
-                    if any(k in func_name.lower() for k in ("send_message", "edit_message", "sendphoto", "answer", "send_player_card")):
+                    if any(k in func_name.lower() for k in ("send_message", "edit_message", "edit_text", "edit_caption", "send_photo", "sendphoto", "answer", "send_player_card")):
                         for arg in subnode.args:
                             val = _ast_to_value(arg, local_body_vars, self.global_constants)
                             if isinstance(val, str) and len(val) > 2 and not text_str and not val.startswith("$"):

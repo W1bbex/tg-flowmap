@@ -129,7 +129,7 @@ def interactive_mode() -> None:
 
     print()
     print(f"🚀 Запуск анализа для: {target_path.resolve()}")
-    exit_code = run_analysis(target_path, output_html=output_html, bot_token=bot_token)
+    exit_code = run_analysis(target_path, output_html=output_html, bot_token=bot_token, parser=parser_probe)
 
     if exit_code == 0 or output_html.exists():
         print()

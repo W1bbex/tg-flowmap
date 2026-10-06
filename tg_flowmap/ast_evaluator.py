@@ -41,15 +41,15 @@ def evaluate_ast_node(
     if isinstance(node, ast.Name):
         if local_vars and node.id in local_vars:
             val = local_vars[node.id]
-            # If variable was tracked across assignments as a list of nodes, take the latest
-            if isinstance(val, list) and val:
+            # Only unwrap if variable was tracked across assignments as a list of AST nodes
+            if isinstance(val, list) and val and isinstance(val[0], ast.AST):
                 val = val[-1]
             if isinstance(val, ast.AST):
                 return evaluate_ast_node(val, local_vars, global_vars)
             return val
         if global_vars and node.id in global_vars:
             val = global_vars[node.id]
-            if isinstance(val, list) and val:
+            if isinstance(val, list) and val and isinstance(val[0], ast.AST):
                 val = val[-1]
             if isinstance(val, ast.AST):
                 return evaluate_ast_node(val, local_vars, global_vars)
@@ -83,6 +83,16 @@ def evaluate_ast_node(
         if isinstance(node.func, ast.Name) and node.func.id in ("str", "int", "float") and node.args:
             arg_val = evaluate_ast_node(node.args[0], local_vars, global_vars)
             if arg_val is not None and not str(arg_val).startswith("$"):
+                if node.func.id == "int":
+                    try:
+                        return int(arg_val)
+                    except (ValueError, TypeError):
+                        pass
+                elif node.func.id == "float":
+                    try:
+                        return float(arg_val)
+                    except (ValueError, TypeError):
+                        pass
                 return str(arg_val)
             arg_id = getattr(node.args[0], "id", "") or getattr(node.args[0], "attr", "")
             return f"{{{arg_id}}}" if arg_id else "N"

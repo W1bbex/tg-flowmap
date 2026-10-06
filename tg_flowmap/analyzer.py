@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple
 
 from tg_flowmap.models import BotMap, Button, Edge, Issue, Keyboard, MessageNode
@@ -50,6 +51,11 @@ class GraphAnalyzer:
                 if not btn.callback_data:
                     # Reply keyboard text button routing
                     if node.keyboard and getattr(node.keyboard, "keyboard_type", "inline") == "reply" and btn.text:
+                        btn_text_low = btn.text.lower()
+                        btn_is_back = any(k in btn_text_low for k in ("назад", "back", "«", "‹", "↩"))
+                        if btn_is_back and node_id not in ("cb:menu", "cmd:/start", "cb:start"):
+                            has_back_button = True
+
                         text_target = btn.text.strip()
                         cmd_candidate = f"cmd:/{text_target.lstrip('/')}"
                         matched_id = None
@@ -67,7 +73,7 @@ class GraphAnalyzer:
                                     to_node_id=matched_id,
                                     button_text=btn.text,
                                     callback_data=btn.text,
-                                    is_back=False,
+                                    is_back=btn_is_back,
                                     status="ok",
                                 )
                             )
@@ -148,30 +154,34 @@ class GraphAnalyzer:
                     )
                 )
 
-        # Step 3: Check for duplicate screens & redundant flows
-        checked_pairs = set()
-        for id1, n1 in self.nodes.items():
-            if not n1.keyboard or not n1.keyboard.rows:
+        # Step 3: Check for duplicate screens & redundant flows (O(N) grouping)
+        kb_groups: Dict[str, List[MessageNode]] = defaultdict(list)
+        for n in self.nodes.values():
+            if not n.keyboard or not n.keyboard.rows or not n.keyboard.name:
                 continue
-            for id2, n2 in self.nodes.items():
-                if id1 >= id2 or not n2.keyboard or not n2.keyboard.rows:
-                    continue
-                pair_key = (id1, id2)
-                if pair_key in checked_pairs:
-                    continue
-                checked_pairs.add(pair_key)
+            total_btns = len(n.keyboard.all_buttons())
+            kb_name_lower = n.keyboard.name.lower()
+            is_generic_back = any(k in kb_name_lower for k in ("back", "cancel", "close", "nav", "назад", "отмена"))
+            if is_generic_back and total_btns <= 1:
+                continue
+            kb_groups[n.keyboard.name].append(n)
 
-                if n1.keyboard.name and n1.keyboard.name == n2.keyboard.name:
-                    self.issues.append(
-                        Issue(
-                            severity="warning",
-                            issue_type="duplicate_screen",
-                            message=f"Экраны '{n1.title}' и '{n2.title}' используют одинаковую клавиатуру '{n1.keyboard.name}'. Рекомендуется объединить обработчики или сделать редирект.",
-                            node_id=id1,
-                            source_file=n1.source_file,
-                            line_number=n1.line_number,
-                        )
+        for kb_name, group_nodes in kb_groups.items():
+            if len(group_nodes) > 1:
+                first = group_nodes[0]
+                others = ", ".join(f"'{n.title}'" for n in group_nodes[1:4])
+                if len(group_nodes) > 4:
+                    others += f" и ещё {len(group_nodes) - 4}"
+                self.issues.append(
+                    Issue(
+                        severity="warning",
+                        issue_type="duplicate_screen",
+                        message=f"Экраны '{first.title}' и {others} используют одинаковую клавиатуру '{kb_name}'. Рекомендуется объединить обработчики или сделать редирект.",
+                        node_id=first.id,
+                        source_file=first.source_file,
+                        line_number=first.line_number,
                     )
+                )
 
         stats = {
             "total_nodes": len(self.nodes),
@@ -265,14 +275,18 @@ class GraphAnalyzer:
                     return node_id, "dynamic"
 
         # Prefix splitting (colon or underscore)
-        if ":" in cb:
-            prefix = cb.split(":", 1)[0]
-            prefix_id = f"cb:{prefix}:*"
-            if prefix_id in self.nodes:
-                return prefix_id, "dynamic"
-            prefix_raw = f"cb:{prefix}"
-            if prefix_raw in self.nodes:
-                return prefix_raw, "dynamic"
+        for sep in (":", "_"):
+            if sep in cb:
+                prefix = cb.split(sep, 1)[0]
+                candidates = (
+                    f"cb:{prefix}:*",
+                    f"cb:{prefix}{sep}*",
+                    f"cb:{prefix}_*",
+                    f"cb:{prefix}",
+                )
+                for cand in candidates:
+                    if cand in self.nodes:
+                        return cand, "dynamic"
 
         # Fallback to menu / main screen
         if cb in ("menu", "main", "dashboard"):

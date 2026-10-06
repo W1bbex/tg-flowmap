@@ -1,3 +1,13 @@
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 const ICON_SYMBOLS = {
       "power": "⚡", "screenshot": "📷", "sound": "🔊", "sound_mute": "🔇",
       "screen": "🖥", "apps": "🎮", "game": "🎮", "gear": "⚙️", "cpu": "🧠",
@@ -143,20 +153,38 @@ const ICON_SYMBOLS = {
     }, { passive: false });
 
     document.getElementById("btn-zoom-in").addEventListener("click", () => {
-      smoothFlyTo(panX, panY, Math.min(2.5, scale * 1.3), 300);
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      const targetScale = Math.min(2.5, scale * 1.3);
+      const ratio = targetScale / scale;
+      const targetPanX = cx - (cx - panX) * ratio;
+      const targetPanY = cy - (cy - panY) * ratio;
+      smoothFlyTo(targetPanX, targetPanY, targetScale, 300);
     });
     document.getElementById("btn-zoom-out").addEventListener("click", () => {
-      smoothFlyTo(panX, panY, Math.max(0.015, scale / 1.3), 300);
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      const targetScale = Math.max(0.015, scale / 1.3);
+      const ratio = targetScale / scale;
+      const targetPanX = cx - (cx - panX) * ratio;
+      const targetPanY = cy - (cy - panY) * ratio;
+      smoothFlyTo(targetPanX, targetPanY, targetScale, 300);
     });
     document.getElementById("btn-reset").addEventListener("click", () => centerOnStart(650));
 
     function centerOnStart(duration = 650) {
-      const startPos = nodePositions.get("cmd:/start") || nodePositions.get("cb:menu") || { x: 0, y: 0 };
+      let targetNodeId = "cmd:/start";
+      if (!nodePositions.has(targetNodeId)) {
+        targetNodeId = nodePositions.has("cb:menu") ? "cb:menu" : (nodePositions.keys().next().value || null);
+      }
+      const startPos = targetNodeId ? (nodePositions.get(targetNodeId) || { x: 0, y: 0 }) : { x: 0, y: 0 };
       const targetScale = 0.8;
       const targetPanX = window.innerWidth / 2 - (startPos.x + CARD_W / 2) * targetScale;
       const targetPanY = 60;
       smoothFlyTo(targetPanX, targetPanY, targetScale, duration);
-      highlightCard(nodePositions.has("cmd:/start") ? "cmd:/start" : "cb:menu");
+      if (targetNodeId) {
+        highlightCard(targetNodeId);
+      }
     }
 
     function centerOnHubMenu(duration = 650) {
@@ -679,14 +707,16 @@ const ICON_SYMBOLS = {
 
       const cleanTitle = (node.title || "").replace(/^cb:/, "").replace(/^cmd:[/]*/, "/");
       const displayTitle = nodeType === "command" ? (nodeId.startsWith("cmd:/") ? nodeId.slice(4) : "/" + nodeId.slice(4)) : cleanTitle;
+      const safeTitle = escapeHtml(displayTitle);
+      const safeSrcName = escapeHtml(srcName);
 
       header.innerHTML = `
         <div class="card-title-group">
           <span style="font-size:13px;">${icon}</span>
-          <span class="card-screen-title" title="${displayTitle}">${displayTitle}</span>
+          <span class="card-screen-title" title="${safeTitle}">${safeTitle}</span>
           ${badgeHtml}
         </div>
-        <div class="card-meta">${srcName}${lineStr}</div>
+        <div class="card-meta">${safeSrcName}${lineStr}</div>
       `;
       card.appendChild(header);
 
@@ -786,13 +816,13 @@ const ICON_SYMBOLS = {
             } else if (btn.icon_custom_emoji_id && ICON_SYMBOLS[btn.icon_custom_emoji_id]) {
               iconHtml = `<span>${ICON_SYMBOLS[btn.icon_custom_emoji_id]} </span>`;
             } else {
-              const tLow = btn.text.toLowerCase();
+              const tLow = (btn.text || "").toLowerCase();
               for (const [k, sym] of Object.entries(ICON_SYMBOLS)) {
                 if (tLow.includes(k)) { iconHtml = `<span>${sym} </span>`; break; }
               }
             }
 
-            btnEl.innerHTML = `<span>${iconHtml}${btn.text}</span>`;
+            btnEl.innerHTML = `<span>${iconHtml}${escapeHtml(btn.text)}</span>`;
 
             btnEl.addEventListener("mouseenter", () => {
               highlightEdgeBranch(nodeId, btn.text);
@@ -830,7 +860,7 @@ const ICON_SYMBOLS = {
 
     function getButtonColorClass(btn) {
       if (btn.style) return `style-${btn.style.toLowerCase()}`;
-      const tLow = btn.text.toLowerCase();
+      const tLow = (btn.text || "").toLowerCase();
       if (tLow.includes("питание") || tLow.includes("включить") || tLow.includes("разблокировать")) return "style-success";
       if (tLow.includes("выключить") || tLow.includes("отмена") || tLow.includes("удалить")) return "style-danger";
       if (tLow.includes("скриншот") || tLow.includes("программы") || tLow.includes("звук") || tLow.includes("настройки")) return "style-primary";
@@ -1117,9 +1147,9 @@ const ICON_SYMBOLS = {
 
           if (bundle.edges.length > 1) {
             const targetTitle = (rawData.nodes[bundle.to_node_id] ? rawData.nodes[bundle.to_node_id].title : bundle.to_node_id.replace(/^cb:/, ''));
-            pill.innerHTML = `<span style="color:${strokeColor}; font-weight:700;">×${bundle.edges.length} кнопок</span> <code>${targetTitle}</code>`;
+            pill.innerHTML = `<span style="color:${strokeColor}; font-weight:700;">×${bundle.edges.length} кнопок</span> <code>${escapeHtml(targetTitle)}</code>`;
           } else {
-            pill.innerHTML = `<span style="color:${strokeColor}">${firstEdge.button_text}</span> <code>${firstEdge.callback_data}</code>`;
+            pill.innerHTML = `<span style="color:${strokeColor}">${escapeHtml(firstEdge.button_text)}</span> <code>${escapeHtml(firstEdge.callback_data)}</code>`;
           }
 
           pill.addEventListener("mouseenter", () => highlightEdgeBranch(bundle.from_node_id, firstEdge.button_text));
@@ -1184,7 +1214,7 @@ const ICON_SYMBOLS = {
         pill.style.left = `${(fromX + toX) / 2}px`;
         pill.style.top = `${(fromY + toY) / 2}px`;
         pill.style.borderColor = color;
-        pill.innerHTML = `<span style="color:${color}">${text}</span> <code>${cb}</code>`;
+        pill.innerHTML = `<span style="color:${color}">${escapeHtml(text)}</span> <code>${escapeHtml(cb)}</code>`;
         pill.addEventListener("mouseenter", () => highlightEdgeBranch(fromId, text));
         pill.addEventListener("mouseleave", () => resetEdgeHighlights());
         pill.addEventListener("click", () => {
@@ -1352,8 +1382,8 @@ const ICON_SYMBOLS = {
       if (!q) return;
 
       for (const [id, node] of Object.entries(rawData.nodes)) {
-        const titleMatch = node.title.toLowerCase().includes(q) || id.toLowerCase().includes(q);
-        const btnMatch = node.keyboard && node.keyboard.rows.some(r => r.some(b => b.text.toLowerCase().includes(q) || (b.callback_data && b.callback_data.toLowerCase().includes(q))));
+        const titleMatch = (node.title || "").toLowerCase().includes(q) || id.toLowerCase().includes(q);
+        const btnMatch = node.keyboard && node.keyboard.rows.some(r => r.some(b => (b.text || "").toLowerCase().includes(q) || (b.callback_data && b.callback_data.toLowerCase().includes(q))));
         if (titleMatch || btnMatch) {
           focusOnCard(id, 700);
           break;
