@@ -141,6 +141,30 @@ def interactive_mode() -> None:
             print(f"Вы можете открыть файл вручную: {output_html.resolve()}")
 
 
+def wait_for_exit(timeout_seconds: int = 60) -> None:
+    if not sys.stdin.isatty():
+        return
+    print()
+    if sys.platform == "win32":
+        try:
+            import msvcrt
+            import time
+            print(f"Нажмите любую клавишу для выхода (окно закроется автоматически через {timeout_seconds} сек)...")
+            start = time.time()
+            while time.time() - start < timeout_seconds:
+                if msvcrt.kbhit():
+                    msvcrt.getch()
+                    return
+                time.sleep(0.2)
+            return
+        except Exception:
+            pass
+    try:
+        input("Нажмите Enter для завершения...")
+    except Exception:
+        pass
+
+
 def main() -> None:
     if len(sys.argv) > 1:
         from tg_flowmap.cli import main as cli_main
@@ -151,9 +175,7 @@ def main() -> None:
         except KeyboardInterrupt:
             print("\nПрервано пользователем.")
         finally:
-            if sys.stdin.isatty():
-                print()
-                input("Нажмите Enter для завершения...")
+            wait_for_exit(60)
 
 
 if __name__ == "__main__":
