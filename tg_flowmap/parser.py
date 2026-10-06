@@ -7,99 +7,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from tg_flowmap.ast_evaluator import _ast_to_value, evaluate_ast_node, extract_module_constants
 from tg_flowmap.models import Button, Keyboard, MessageNode
-
-
-def _ast_to_value(
-    node: ast.AST,
-    local_vars: Optional[Dict[str, Any]] = None,
-    global_vars: Optional[Dict[str, Any]] = None,
-) -> Any:
-    """Best-effort extraction of literal values or string representations from AST nodes."""
-    if local_vars is None:
-        local_vars = {}
-    if global_vars is None:
-        global_vars = {}
-
-    if isinstance(node, ast.Constant):
-        return node.value
-
-    if isinstance(node, ast.BinOp):
-        left = _ast_to_value(node.left, local_vars, global_vars)
-        right = _ast_to_value(node.right, local_vars, global_vars)
-        if isinstance(node.op, ast.Mult) and isinstance(left, str) and isinstance(right, int):
-            return left * right
-        if isinstance(node.op, ast.Add) and isinstance(left, str) and isinstance(right, str):
-            return left + right
-
-    if isinstance(node, ast.JoinedStr):
-        parts = []
-        for part in node.values:
-            if isinstance(part, ast.Constant):
-                parts.append(str(part.value))
-            elif isinstance(part, ast.FormattedValue):
-                var_name = getattr(part.value, "id", None) or getattr(part.value, "attr", "*")
-                parts.append(f"{{{var_name}}}")
-            else:
-                parts.append("*")
-        return "".join(parts)
-
-    if isinstance(node, ast.Name):
-        if node.id in local_vars:
-            val = local_vars[node.id]
-            if isinstance(val, ast.AST):
-                return _ast_to_value(val, local_vars, global_vars)
-            return val
-        if node.id in global_vars:
-            val = global_vars[node.id]
-            if isinstance(val, ast.AST):
-                return _ast_to_value(val, local_vars, global_vars)
-            return val
-        return f"${node.id}"
-
-    if isinstance(node, ast.Attribute):
-        return f"${node.attr}"
-
-    if isinstance(node, ast.Call):
-        # Support dict.get(key, default) lookup (e.g. ICONS.get("sound"))
-        if isinstance(node.func, ast.Attribute) and node.func.attr == "get":
-            dict_obj = _ast_to_value(node.func.value, local_vars, global_vars)
-            if isinstance(dict_obj, dict) and node.args:
-                key = _ast_to_value(node.args[0], local_vars, global_vars)
-                default = None
-                if len(node.args) > 1:
-                    default = _ast_to_value(node.args[1], local_vars, global_vars)
-                for kw in node.keywords:
-                    if kw.arg == "default":
-                        default = _ast_to_value(kw.value, local_vars, global_vars)
-                return dict_obj.get(key, default)
-
-        # Support dict(other_dict)
-        if isinstance(node.func, ast.Name) and node.func.id == "dict" and node.args:
-            arg_val = _ast_to_value(node.args[0], local_vars, global_vars)
-            if isinstance(arg_val, dict):
-                return dict(arg_val)
-
-        # Support str(x), int(x), float(x)
-        if isinstance(node.func, ast.Name) and node.func.id in ("str", "int", "float") and node.args:
-            arg_val = _ast_to_value(node.args[0], local_vars, global_vars)
-            if arg_val is not None and not str(arg_val).startswith("$"):
-                return str(arg_val)
-            arg_id = getattr(node.args[0], "id", "") or getattr(node.args[0], "attr", "")
-            return f"{{{arg_id}}}" if arg_id else "N"
-
-        return None
-
-    if isinstance(node, ast.Dict):
-        d = {}
-        for k, v in zip(node.keys, node.values):
-            if k is not None:
-                key_val = _ast_to_value(k, local_vars, global_vars)
-                if key_val is not None:
-                    d[str(key_val)] = _ast_to_value(v, local_vars, global_vars)
-        return d
-
-    return None
 
 
 class AstParser:
@@ -146,6 +55,8 @@ class AstParser:
         py_files: List[Path] = []
         for root, dirs, files in os.walk(dirpath):
             dirs[:] = [d for d in dirs if d not in ignored_dirs and not d.startswith(".")]
+            if not recursive:
+                dirs.clear()
             for file in files:
                 # Exclude tests and mocks from production bot mapping
                 if file.endswith(".py") and not file.startswith("test_") and not file.endswith("_test.py"):
@@ -204,7 +115,10 @@ class AstParser:
         """
         hub_id = "cb:menu"
         hub_node = self.nodes.get(hub_id)
-        hub_kb_name = getattr(hub_node.keyboard, "name", "main_menu_markup") if (hub_node and hub_node.keyboard) else "main_menu_markup"
+        if not hub_node or not hub_node.keyboard or not getattr(hub_node.keyboard, "name", None):
+            return
+
+        hub_kb_name = hub_node.keyboard.name
 
         to_remove = set()
 
@@ -234,12 +148,14 @@ class AstParser:
                     self.screen_aliases[node_id] = target_screen.id
                     to_remove.add(node_id)
 
-        # Pass B: Convert handlers that just re-send hub keyboard (like console_close)
+        # Pass B: Convert handlers that just re-send hub keyboard (only if explicitly named *_close, *_cancel, *_exit, *_back)
         for node_id, node in list(self.nodes.items()):
             if node_id in (hub_id, "cmd:/start") or node_id in to_remove:
                 continue
 
-            if node.keyboard and node.keyboard.name == hub_kb_name:
+            node_clean = node_id.split(":", 1)[-1].lower()
+            is_return_intent = any(node_clean.endswith(k) for k in ("_close", "_cancel", "_exit", "_back"))
+            if is_return_intent and node.keyboard and node.keyboard.name == hub_kb_name:
                 node.node_type = "callback"
                 node.keyboard = None
                 self.hub_return_nodes.add(node_id)
@@ -249,13 +165,8 @@ class AstParser:
 
     def _extract_global_constants(self, tree: ast.AST) -> None:
         """Collects top-level module constants like CANONICAL_ICONS, EMOJI_BTN_*, etc."""
-        for stmt in tree.body:
-            if isinstance(stmt, ast.Assign):
-                for target in stmt.targets:
-                    if isinstance(target, ast.Name):
-                        val = _ast_to_value(stmt.value, {}, self.global_constants)
-                        if val is not None:
-                            self.global_constants[target.id] = val
+        constants = extract_module_constants(tree)
+        self.global_constants.update(constants)
 
     def _extract_keyboards(self, tree: ast.AST, filepath: Path) -> None:
         """Finds functions, class methods, or module assignments constructing Telegram keyboards."""
@@ -502,7 +413,13 @@ class AstParser:
 
     def _parse_helper_call(self, call_node: ast.Call) -> Optional[Button]:
         func_name = getattr(call_node.func, "attr", None) or getattr(call_node.func, "id", "")
-        if "back" in func_name.lower():
+        f_lower = func_name.lower()
+        is_back = (
+            f_lower.startswith("back")
+            or f_lower.endswith(("_back", "_back_btn", "_back_button"))
+            or f_lower in ("back", "back_button", "back_btn", "btn_back", "get_back_button")
+        )
+        if is_back:
             target = "menu"
             if call_node.args:
                 val = _ast_to_value(call_node.args[0], {}, self.global_constants)
@@ -831,30 +748,9 @@ class AstParser:
                     func_name = getattr(subnode.func, "attr", None) or getattr(subnode.func, "id", "")
                     if any(k in func_name.lower() for k in ("send_message", "edit_message", "sendphoto", "answer", "send_player_card")):
                         for arg in subnode.args:
-                            if isinstance(arg, ast.Call):
-                                call_name = getattr(arg.func, "attr", None) or getattr(arg.func, "id", "")
-                                if "dashboard_text" in call_name:
-                                    text_str = (
-                                        "💻 <b>PC Control</b>\n\n"
-                                        "👤 <b>Сессия</b>\n"
-                                        "├ Статус: <i>{status}</i>\n"
-                                        "├ Открыт: <i>{active_window}</i>\n"
-                                        "└ Музыка: <i>{media_state}</i>\n\n"
-                                        "⚡ <b>Железо</b>\n"
-                                        "├ CPU: <i>{cpu_usage}</i>\n"
-                                        "├ GPU: <i>{gpu_usage}</i>\n"
-                                        "└ RAM: <i>{ram_usage}</i>\n\n"
-                                        "📁 <b>Накопители</b>\n"
-                                        "└ <i>{disks_usage}</i>"
-                                    )
-                                elif "console_card_text" in call_name:
-                                    text_str = "📟 <b>Терминал ПК</b>\n\n├ Цель: <i>{target}</i>\n├ Оболочка: <i>{shell}</i>\n└ Статус: <i>{status}</i>"
-                                elif "player_card_text" in call_name:
-                                    text_str = "🎵 <b>Медиаплеер</b>\n\n▶ <i>{track_title}</i>\n├ Громкость: <i>{volume}%</i>\n└ Статус: <i>{playback_state}</i>"
-                            else:
-                                val = _ast_to_value(arg, local_body_vars, self.global_constants)
-                                if isinstance(val, str) and len(val) > 2 and not text_str and not val.startswith("$"):
-                                    text_str = val
+                            val = _ast_to_value(arg, local_body_vars, self.global_constants)
+                            if isinstance(val, str) and len(val) > 2 and not text_str and not val.startswith("$"):
+                                text_str = val
                         for kw in subnode.keywords:
                             if kw.arg in ("text", "caption"):
                                 val = _ast_to_value(kw.value, local_body_vars, self.global_constants)

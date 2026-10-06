@@ -171,6 +171,23 @@
     #viewport.zoomed-out .edge-label-pill {
       display: none !important;
     }
+    #viewport.zoomed-out .tg-card {
+      content-visibility: auto;
+      contain-intrinsic-size: 320px 180px;
+    }
+    #viewport.zoomed-out .tg-card-body,
+    #viewport.zoomed-out .tg-card-buttons {
+      opacity: 0.7;
+    }
+    #viewport.zoomed-out .tg-card:hover,
+    #viewport.zoomed-out .tg-card.highlighted {
+      opacity: 1 !important;
+      content-visibility: visible !important;
+    }
+    #viewport.zoomed-out .tg-card:hover .tg-card-body,
+    #viewport.zoomed-out .tg-card:hover .tg-card-buttons {
+      opacity: 1 !important;
+    }
 
     #canvas-world {
       position: absolute;

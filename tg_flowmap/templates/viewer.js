@@ -43,7 +43,7 @@ const ICON_SYMBOLS = {
       const rx = Math.round(panX);
       const ry = Math.round(panY);
       world.style.transform = `translate3d(${rx}px, ${ry}px, 0) scale(${scale})`;
-      if (scale < 0.35) {
+      if (scale < 0.55) {
         viewport.classList.add("zoomed-out");
       } else {
         viewport.classList.remove("zoomed-out");
@@ -846,32 +846,34 @@ const ICON_SYMBOLS = {
     }
 
     function setupCardDrag(card, handle, nodeId) {
-      let dragStartX, dragStartY, cardStartX, cardStartY, isDragging = false;
+      let dragStartX, dragStartY, cardStartX, cardStartY;
+
+      const onMouseMove = (e) => {
+        const dx = (e.clientX - dragStartX) / scale;
+        const dy = (e.clientY - dragStartY) / scale;
+        const newX = Math.round(cardStartX + dx);
+        const newY = Math.round(cardStartY + dy);
+        card.style.left = `${newX}px`;
+        card.style.top = `${newY}px`;
+        nodePositions.set(nodeId, { x: newX, y: newY });
+        renderConnectors();
+      };
+
+      const onMouseUp = () => {
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+      };
 
       handle.addEventListener("mousedown", (e) => {
-        isDragging = true;
         dragStartX = e.clientX;
         dragStartY = e.clientY;
         const pos = nodePositions.get(nodeId);
         cardStartX = pos.x;
         cardStartY = pos.y;
         e.stopPropagation();
-      });
 
-      window.addEventListener("mousemove", (e) => {
-        if (!isDragging) return;
-        const dx = (e.clientX - dragStartX) / scale;
-        const dy = (e.clientY - dragStartY) / scale;
-        const newX = cardStartX + dx;
-        const newY = cardStartY + dy;
-        card.style.left = `${newX}px`;
-        card.style.top = `${newY}px`;
-        nodePositions.set(nodeId, { x: newX, y: newY });
-        renderConnectors();
-      });
-
-      window.addEventListener("mouseup", () => {
-        if (isDragging) isDragging = false;
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", onMouseUp);
       });
     }
 
@@ -1215,6 +1217,9 @@ const ICON_SYMBOLS = {
       const toCard = nodeElements.get(edge.to_node_id);
       if (!fromCard || !toCard) return;
 
+      const toX = toPos.x + CARD_W / 2;
+      const toY = toPos.y;
+
       let fromX = fromPos.x + CARD_W / 2;
       let fromY = fromPos.y + (fromCard.offsetHeight || CARD_H);
       const btnEl = Array.from(fromCard.querySelectorAll(".tg-btn")).find(b => b.dataset.btnText === btnText);
@@ -1228,9 +1233,12 @@ const ICON_SYMBOLS = {
           cur = cur.offsetParent;
         }
         const bH = btnEl.offsetHeight || 34;
+        const btnCenterY = offTop + bH / 2;
         const rowEl = btnEl.closest(".tg-row");
         const rowButtons = rowEl ? Array.from(rowEl.querySelectorAll(".tg-btn")) : [btnEl];
         const btnIdxInRow = rowButtons.indexOf(btnEl);
+        const isLeftCol = (rowButtons.length > 1 && btnIdxInRow === 0);
+        const isRightCol = (rowButtons.length > 1 && btnIdxInRow === rowButtons.length - 1);
         const toCenterX = toPos.x + CARD_W / 2;
         const fromCardCenterX = fromPos.x + CARD_W / 2;
         const fromCardBottom = fromPos.y + (fromCard.offsetHeight || CARD_H);
@@ -1250,9 +1258,6 @@ const ICON_SYMBOLS = {
           fromY = fromCardBottom;
         }
       }
-
-      const toX = toPos.x + CARD_W / 2;
-      const toY = toPos.y;
 
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       let d;

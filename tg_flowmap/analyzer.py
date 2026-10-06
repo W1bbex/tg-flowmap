@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from typing import Dict, List, Optional, Set, Tuple
 
 from tg_flowmap.models import BotMap, Button, Edge, Issue, Keyboard, MessageNode
@@ -49,6 +48,29 @@ class GraphAnalyzer:
                     continue
 
                 if not btn.callback_data:
+                    # Reply keyboard text button routing
+                    if node.keyboard and getattr(node.keyboard, "keyboard_type", "inline") == "reply" and btn.text:
+                        text_target = btn.text.strip()
+                        cmd_candidate = f"cmd:/{text_target.lstrip('/')}"
+                        matched_id = None
+                        if cmd_candidate in self.nodes:
+                            matched_id = cmd_candidate
+                        else:
+                            for nid, n in self.nodes.items():
+                                if hasattr(n, "aliases") and text_target in n.aliases:
+                                    matched_id = nid
+                                    break
+                        if matched_id:
+                            self.edges.append(
+                                Edge(
+                                    from_node_id=node_id,
+                                    to_node_id=matched_id,
+                                    button_text=btn.text,
+                                    callback_data=btn.text,
+                                    is_back=False,
+                                    status="ok",
+                                )
+                            )
                     continue
 
                 cb = btn.callback_data
@@ -112,7 +134,7 @@ class GraphAnalyzer:
         for node_id, node in self.nodes.items():
             if (
                 node_id not in called_targets
-                and node_id not in ("cb:menu", "cmd:/start", "cb:start", "cmd:/menu", "cmd:/console")
+                and node_id not in ("cb:menu", "cmd:/start", "cb:start", "cmd:/menu")
                 and not node_id.startswith("cmd:")
             ):
                 self.issues.append(
@@ -168,7 +190,8 @@ class GraphAnalyzer:
         # 1. Null/invalid icon_custom_emoji_id
         if btn.icon_custom_emoji_id is not None:
             val = str(btn.icon_custom_emoji_id).strip()
-            if val.lower() in ("none", "null", "") or not val.isdigit():
+            # If value is a dynamic AST reference (starts with $), do not fail strict validation
+            if not val.startswith("$") and (val.lower() in ("none", "null", "") or not val.isdigit()):
                 self.issues.append(
                     Issue(
                         severity="error",
@@ -221,6 +244,14 @@ class GraphAnalyzer:
         if exact_id in self.nodes:
             return exact_id, "ok"
 
+        # Screen aliases check
+        if cb in self.screen_aliases:
+            return self.screen_aliases[cb], "ok"
+        if f"cmd:/{cb}" in self.screen_aliases:
+            return self.screen_aliases[f"cmd:/{cb}"], "ok"
+        if f"cb:{cb}" in self.screen_aliases:
+            return self.screen_aliases[f"cb:{cb}"], "ok"
+
         # Alias match
         for node_id, node in self.nodes.items():
             if hasattr(node, "aliases") and (cb in node.aliases or f"/{cb}" in node.aliases or f"cb:{cb}" in node.aliases):
@@ -230,7 +261,7 @@ class GraphAnalyzer:
         for node_id in self.nodes:
             if node_id.startswith("cb:") and node_id.endswith("*"):
                 prefix = node_id[3:-1]  # strip "cb:" and "*"
-                if cb.startswith(prefix):
+                if prefix and cb.startswith(prefix):
                     return node_id, "dynamic"
 
         # Prefix splitting (colon or underscore)

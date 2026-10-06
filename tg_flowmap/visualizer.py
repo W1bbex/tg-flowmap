@@ -21,7 +21,8 @@ class HtmlVisualizer:
         css_content = css_file.read_text(encoding="utf-8")
         js_content = js_file.read_text(encoding="utf-8")
 
-        data_json = json.dumps(self.bot_map.to_dict(), ensure_ascii=False)
+        # Escape </ to prevent premature </script> closing and DOM XSS in browser HTML parser
+        data_json = json.dumps(self.bot_map.to_dict(), ensure_ascii=False).replace("</", "<\\/")
 
         # Inject styles, data, and scripts into the standalone template
         html_output = html_template.replace("/* __STYLES__ */", css_content)

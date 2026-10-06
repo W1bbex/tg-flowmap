@@ -27,12 +27,8 @@ def discover_candidate_bots() -> list[Path]:
     for ws in workspace_candidates:
         if not ws.exists():
             continue
-        # Check pc-control/vds_bot
-        vds_bot = ws / "pc-control" / "vds_bot"
-        if vds_bot.exists() and vds_bot not in candidates:
-            candidates.append(vds_bot)
-            
-        # Scan immediate subfolders in workspace for bot.py or handlers
+
+        # Scan subfolders in workspace for bot.py or handlers
         try:
             for item in ws.iterdir():
                 if item.is_dir() and not item.name.startswith((".", "_")) and item != SCRIPT_DIR:
