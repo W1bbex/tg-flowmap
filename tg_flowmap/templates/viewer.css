@@ -630,6 +630,17 @@
       color: #fca5a5 !important;
     }
 
+    /* Telegram Premium Custom Emoji */
+    .tg-premium-emoji {
+      width: 17px;
+      height: 17px;
+      vertical-align: middle;
+      object-fit: contain;
+      display: inline-block;
+      flex-shrink: 0;
+      margin-right: 3px;
+    }
+
     /* Connection Ports on Outer Card Boundary */
     .card-edge-port {
       position: absolute;

@@ -100,9 +100,40 @@ def interactive_mode() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     output_html = output_dir / f"{bot_name}_flowmap.html"
 
+    # Check for custom emoji IDs and bot token
+    from tg_flowmap.cli import load_env_token
+    from tg_flowmap.parser import AstParser
+
+    bot_token = load_env_token(target_path)
+    parser_probe = AstParser()
+    if target_path.is_file():
+        parser_probe.parse_file(target_path)
+    else:
+        parser_probe.parse_dir(target_path)
+
+    if parser_probe.custom_emoji_ids and not bot_token:
+        print()
+        print(f"✨ В боте обнаружено {len(parser_probe.custom_emoji_ids)} уникальных Telegram Premium эмодзи!")
+        raw_tok = input("🔑 Введите токен бота для загрузки стикеров (Enter для пропуска): ").strip()
+        if raw_tok:
+            bot_token = raw_tok
+            save_ans = input("💾 Сохранить токен в .env для последующих анализов? [Y/n]: ").strip().lower()
+            if save_ans in ("", "y", "yes", "д", "да"):
+                env_file = SCRIPT_DIR / ".env"
+                try:
+                    env_text = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
+                    if "TELEGRAM_BOT_TOKEN=" not in env_text and "BOT_TOKEN=" not in env_text:
+                        with env_file.open("a", encoding="utf-8") as f:
+                            if env_text and not env_text.endswith("\n"):
+                                f.write("\n")
+                            f.write(f"TELEGRAM_BOT_TOKEN={bot_token}\n")
+                        print("✔ Токен сохранён в .env (защищён в .gitignore)")
+                except Exception as e:
+                    print(f"[WARN] Не удалось сохранить в .env: {e}")
+
     print()
     print(f"🚀 Запуск анализа для: {target_path.resolve()}")
-    exit_code = run_analysis(target_path, output_html=output_html)
+    exit_code = run_analysis(target_path, output_html=output_html, bot_token=bot_token)
 
     if exit_code == 0 or output_html.exists():
         print()

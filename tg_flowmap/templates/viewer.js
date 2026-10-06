@@ -604,6 +604,20 @@ const ICON_SYMBOLS = {
       createCard(nodeId, node);
     }
 
+    function formatMessageText(text) {
+      if (!text) return "";
+      let res = text;
+      if (rawData.custom_emojis) {
+        res = res.replace(/<tg-emoji[^>]*emoji-id=['"](\d+)['"][^>]*>.*?<\/tg-emoji>/gi, (match, id) => {
+          if (rawData.custom_emojis[id]) {
+            return `<img class="tg-premium-emoji" src="${rawData.custom_emojis[id]}" alt="emoji" />`;
+          }
+          return match;
+        });
+      }
+      return res;
+    }
+
     function createCard(nodeId, node) {
       const pos = nodePositions.get(nodeId) || { x: 0, y: 0 };
       const card = document.createElement("div");
@@ -702,7 +716,7 @@ const ICON_SYMBOLS = {
             <div class="popup-modal-icon">🔔</div>
             <div class="popup-modal-content">
               <div class="popup-modal-title">Всплывающее окно</div>
-              <div class="popup-modal-text">${node.text_template || "Уведомление answerCallbackQuery"}</div>
+              <div class="popup-modal-text">${formatMessageText(node.text_template || "Уведомление answerCallbackQuery")}</div>
             </div>
           </div>
           <div class="popup-modal-footer">
@@ -717,7 +731,7 @@ const ICON_SYMBOLS = {
         body.innerHTML = `
           <div class="command-box">
             <div class="command-box-prompt"><code>/${cmdName}</code></div>
-            <div class="command-box-text">${node.text_template || "Команда Telegram-чата"}</div>
+            <div class="command-box-text">${formatMessageText(node.text_template || "Команда Telegram-чата")}</div>
           </div>
         `;
         card.appendChild(body);
@@ -728,14 +742,14 @@ const ICON_SYMBOLS = {
         body.innerHTML = `
           <div class="callback-action-box">
             <div class="callback-action-header">🔘 Действие: <code>${cbName}</code></div>
-            <div class="callback-action-text">${node.text_template || "Обрабатывает нажатие инлайн-кнопки"}</div>
+            <div class="callback-action-text">${formatMessageText(node.text_template || "Обрабатывает нажатие инлайн-кнопки")}</div>
           </div>
         `;
         card.appendChild(body);
       } else {
         const body = document.createElement("div");
         body.className = "tg-card-body";
-        body.innerHTML = node.text_template || "<i>(Пустой текст)</i>";
+        body.innerHTML = formatMessageText(node.text_template || "<i>(Пустой текст)</i>");
       }
 
       // Keyboard with Colored Buttons
@@ -765,17 +779,20 @@ const ICON_SYMBOLS = {
               btnEl.title = `❌ ТУПИК: коллбек '${btn.callback_data}' не найден!`;
             }
 
-            let iconGlyph = "";
-            if (btn.icon_custom_emoji_id && ICON_SYMBOLS[btn.icon_custom_emoji_id]) {
-              iconGlyph = ICON_SYMBOLS[btn.icon_custom_emoji_id];
+            let iconHtml = "";
+            const customEmojiUrl = (rawData.custom_emojis && btn.icon_custom_emoji_id && rawData.custom_emojis[btn.icon_custom_emoji_id]);
+            if (customEmojiUrl) {
+              iconHtml = `<img class="tg-premium-emoji" src="${customEmojiUrl}" alt="icon" />`;
+            } else if (btn.icon_custom_emoji_id && ICON_SYMBOLS[btn.icon_custom_emoji_id]) {
+              iconHtml = `<span>${ICON_SYMBOLS[btn.icon_custom_emoji_id]} </span>`;
             } else {
               const tLow = btn.text.toLowerCase();
               for (const [k, sym] of Object.entries(ICON_SYMBOLS)) {
-                if (tLow.includes(k)) { iconGlyph = sym; break; }
+                if (tLow.includes(k)) { iconHtml = `<span>${sym} </span>`; break; }
               }
             }
 
-            btnEl.innerHTML = `<span>${iconGlyph ? `${iconGlyph} ` : ""}${btn.text}</span>`;
+            btnEl.innerHTML = `<span>${iconHtml}${btn.text}</span>`;
 
             btnEl.addEventListener("mouseenter", () => {
               highlightEdgeBranch(nodeId, btn.text);

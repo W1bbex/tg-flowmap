@@ -2,12 +2,44 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 from tg_flowmap.analyzer import GraphAnalyzer
 from tg_flowmap.parser import AstParser
 from tg_flowmap.visualizer import HtmlVisualizer
+
+
+def load_env_token(target_path: Path) -> Optional[str]:
+    """Tries to find BOT_TOKEN or TELEGRAM_BOT_TOKEN in env or .env files."""
+    for var in ("TELEGRAM_BOT_TOKEN", "BOT_TOKEN"):
+        val = os.environ.get(var)
+        if val and ":" in val:
+            return val.strip()
+
+    candidate_envs = [
+        Path.cwd() / ".env",
+        target_path / ".env" if target_path.is_dir() else target_path.parent / ".env",
+        target_path.parent / ".env",
+        Path(__file__).resolve().parent.parent / ".env",
+    ]
+    for env_path in candidate_envs:
+        if env_path.exists():
+            try:
+                for line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                    line = line.strip()
+                    if line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    k = k.strip()
+                    v = v.strip().strip("'\"")
+                    if k in ("TELEGRAM_BOT_TOKEN", "BOT_TOKEN") and ":" in v:
+                        return v
+            except Exception:
+                pass
+    return None
 
 
 def run_analysis(
@@ -15,6 +47,7 @@ def run_analysis(
     output_html: Path | None = None,
     output_json: Path | None = None,
     strict: bool = False,
+    bot_token: str | None = None,
 ) -> int:
     if sys.platform == "win32":
         try:
@@ -41,6 +74,24 @@ def run_analysis(
     )
     bot_map = analyzer.build_map()
 
+    # Fetch Telegram Premium custom emojis if present
+    token = bot_token or load_env_token(target_path)
+    if parser.custom_emoji_ids:
+        if token:
+            from tg_flowmap.emoji_fetcher import fetch_custom_emojis
+            emojis = fetch_custom_emojis(token, parser.custom_emoji_ids)
+            bot_map.custom_emojis = emojis
+        else:
+            from tg_flowmap.emoji_fetcher import get_default_cache_dir, load_cached_emoji
+            cache_dir = get_default_cache_dir()
+            cached = {}
+            for eid in parser.custom_emoji_ids:
+                data_url = load_cached_emoji(eid, cache_dir)
+                if data_url:
+                    cached[eid] = data_url
+            if cached:
+                bot_map.custom_emojis = cached
+
     stats = bot_map.stats
     print("=" * 60)
     print("  🧭 TG-FLOWMAP — Telegram Bot Visualizer & Linter")
@@ -50,6 +101,8 @@ def run_analysis(
     print(f"Всего связей:    {stats.get('total_edges', 0)}")
     print(f"Клавиатур найдено: {len(parser.keyboards)}")
     print(f"Дублирующихся экранов: {stats.get('duplicate_screens', 0)}")
+    if parser.custom_emoji_ids:
+        print(f"Премиум эмодзи:  {len(parser.custom_emoji_ids)} (загружено: {len(bot_map.custom_emojis)})")
     print(f"Тупиков (Dead-end): {stats.get('dead_ends', 0)}")
     print(f"Ошибок эмодзи:   {stats.get('broken_emojis', 0)}")
     print(f"Без кнопки Назад: {stats.get('missing_backs', 0)}")
@@ -117,6 +170,13 @@ def main() -> None:
         action="store_true",
         help="Возвращать код ошибки 1 при обнаружении тупиков или сломанных эмодзи (для CI/CD)",
     )
+    arg_parser.add_argument(
+        "-t",
+        "--token",
+        type=str,
+        default=None,
+        help="Токен Telegram-бота для загрузки оригинальных Premium эмодзи",
+    )
 
     args = arg_parser.parse_args()
     target = Path(args.target)
@@ -128,6 +188,7 @@ def main() -> None:
         output_html=out_html,
         output_json=out_json,
         strict=args.strict,
+        bot_token=args.token,
     )
     sys.exit(exit_code)
 

@@ -1,4 +1,4 @@
-﻿__pycache__/
+__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -18,3 +18,5 @@ venv/
 htmlcov/
 .pytest_cache/
 output/
+.cache/
+

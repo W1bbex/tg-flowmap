@@ -124,6 +124,7 @@ class BotMap:
     edges: List[Edge] = field(default_factory=list)
     issues: List[Issue] = field(default_factory=list)
     stats: Dict[str, Any] = field(default_factory=dict)
+    custom_emojis: Dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -131,4 +132,5 @@ class BotMap:
             "edges": [e.to_dict() for e in self.edges],
             "issues": [i.to_dict() for i in self.issues],
             "stats": self.stats,
+            "custom_emojis": self.custom_emojis,
         }

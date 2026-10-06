@@ -111,6 +111,7 @@ class AstParser:
         self.screen_aliases: Dict[str, str] = {}
         self.hub_return_nodes: Set[str] = set()
         self.global_constants: Dict[str, Any] = {}
+        self.custom_emoji_ids: Set[str] = set()
 
     def parse_dir(self, dirpath: Path, recursive: bool = True) -> None:
         """Parses all python files in a directory, ignoring heavy/system and test folders."""
@@ -522,6 +523,8 @@ class AstParser:
             cb = str(d.get("callback_data", "") or "") or None
             url = str(d.get("url", "") or "") or None
             icon_emoji = d.get("icon_custom_emoji_id")
+            if icon_emoji:
+                self.custom_emoji_ids.add(str(icon_emoji))
             style = d.get("style")
             return Button(
                 text=text,
@@ -557,12 +560,19 @@ class AstParser:
             if not cb_val and len(elt_node.args) > 1:
                 cb_val = _ast_to_value(elt_node.args[1], local_vars or {}, self.global_constants)
 
+            icon_emoji = kwargs.get("icon_custom_emoji_id")
+            if icon_emoji:
+                self.custom_emoji_ids.add(str(icon_emoji))
+            style_val = kwargs.get("style")
+
             text = str(text_val or "Button")
             cb = str(cb_val) if cb_val is not None else None
             return Button(
                 text=text,
                 callback_data=cb,
                 url=str(kwargs.get("url", "")) if kwargs.get("url") else None,
+                icon_custom_emoji_id=str(icon_emoji) if icon_emoji is not None else None,
+                style=str(style_val) if style_val else None,
                 line_number=getattr(elt_node, "lineno", None),
             )
 
@@ -694,6 +704,10 @@ class AstParser:
             trigger_pattern=trigger_pattern,
             aliases=aliases or [],
         )
+
+        if text_template:
+            for match in re.finditer(r'<tg-emoji[^>]*emoji-id=[\'"](\d+)[\'"]', text_template):
+                self.custom_emoji_ids.add(match.group(1))
 
         # Attach local inline keyboard or resolve keyboard reference
         if inline_kb and inline_kb.rows:
