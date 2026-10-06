@@ -28,6 +28,7 @@ class Button:
 class Keyboard:
     name: str
     rows: List[List[Button]] = field(default_factory=list)
+    keyboard_type: str = "inline"  # "inline" or "reply"
     source_file: str = ""
     line_number: Optional[int] = None
 
@@ -38,9 +39,11 @@ class Keyboard:
         return {
             "name": self.name,
             "rows": [[btn.to_dict() for btn in row] for row in self.rows],
+            "keyboard_type": self.keyboard_type,
             "source_file": self.source_file,
             "line_number": self.line_number,
         }
+
 
 
 @dataclass

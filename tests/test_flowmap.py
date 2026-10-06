@@ -236,3 +236,49 @@ def handle(data):
         assert "cb:tab_two" in parser.nodes
     finally:
         p.unlink(missing_ok=True)
+
+
+def test_builder_and_reply_markup_support():
+    code = '''
+from aiogram import Router, types
+from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+from aiogram.filters import Command
+
+router = Router()
+
+@router.message(Command("start"))
+async def start_handler(msg: types.Message):
+    builder = ReplyKeyboardBuilder()
+    builder.button(text="Локация", request_location=True)
+    builder.button(text="Контакт", request_contact=True)
+    await msg.answer("Привет", reply_markup=builder.as_markup(resize_keyboard=True))
+
+@router.callback_query(lambda c: c.data == "help")
+async def help_handler(cb: types.CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Назад", callback_data="start")
+    await cb.message.edit_text("Помощь", reply_markup=builder.as_markup())
+'''
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(code)
+        p = Path(f.name)
+
+    try:
+        parser = AstParser()
+        parser.parse_file(p)
+        assert "cmd:/start" in parser.nodes
+        assert "cb:help" in parser.nodes
+
+        start_node = parser.nodes["cmd:/start"]
+        assert start_node.keyboard is not None
+        assert start_node.keyboard.keyboard_type == "reply"
+
+        analyzer = GraphAnalyzer(parser.nodes, parser.keyboards)
+        bot_map = analyzer.build_map()
+
+        # Reply buttons should not trigger invalid_button errors
+        invalid_btn_issues = [i for i in bot_map.issues if i.issue_type == "invalid_button"]
+        assert len(invalid_btn_issues) == 0
+    finally:
+        p.unlink(missing_ok=True)
+

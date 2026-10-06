@@ -135,7 +135,10 @@ class GraphAnalyzer:
                 )
 
         # 2. Missing action (no callback_data and no url)
-        if not btn.callback_data and not btn.url:
+        is_reply = False
+        if node.keyboard and getattr(node.keyboard, "keyboard_type", "inline") == "reply":
+            is_reply = True
+        if not is_reply and not btn.callback_data and not btn.url:
             self.issues.append(
                 Issue(
                     severity="error",

@@ -80,6 +80,14 @@ def _ast_to_value(
             if isinstance(arg_val, dict):
                 return dict(arg_val)
 
+        # Support str(x), int(x), float(x)
+        if isinstance(node.func, ast.Name) and node.func.id in ("str", "int", "float") and node.args:
+            arg_val = _ast_to_value(node.args[0], local_vars, global_vars)
+            if arg_val is not None and not str(arg_val).startswith("$"):
+                return str(arg_val)
+            arg_id = getattr(node.args[0], "id", "") or getattr(node.args[0], "attr", "")
+            return f"{{{arg_id}}}" if arg_id else "N"
+
         return None
 
     if isinstance(node, ast.Dict):
@@ -196,16 +204,17 @@ class AstParser:
     def _extract_keyboards(self, tree: ast.AST, filepath: Path) -> None:
         """Finds functions, class methods, or module assignments constructing Telegram keyboards."""
         for node in getattr(tree, "body", []):
-            if isinstance(node, ast.FunctionDef):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 kb = self._parse_keyboard_function(node, filepath)
                 if kb and kb.rows:
                     self.keyboards[node.name] = kb
             elif isinstance(node, ast.ClassDef):
                 for item in node.body:
-                    if isinstance(item, ast.FunctionDef):
+                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         kb = self._parse_keyboard_function(item, filepath)
                         if kb and kb.rows:
                             self.keyboards[item.name] = kb
+
             elif isinstance(node, ast.Assign):
                 for target in node.targets:
                     if isinstance(target, ast.Name):
@@ -221,12 +230,21 @@ class AstParser:
         # Scope analysis: collect local assignments and list mutations
         local_vars: Dict[str, List[ast.AST]] = {}
         list_mutations: Dict[str, List[ast.AST]] = {}
+        builders: Dict[str, List[Button]] = {}
+        builder_types: Dict[str, str] = {}
+        builder_adjust: Dict[str, int] = {}
 
         for stmt in ast.walk(func_node):
             if isinstance(stmt, ast.Assign):
                 for target in stmt.targets:
                     if isinstance(target, ast.Name):
                         local_vars.setdefault(target.id, []).append(stmt.value)
+                        if isinstance(stmt.value, ast.Call):
+                            call_name = getattr(stmt.value.func, "id", "") or getattr(stmt.value.func, "attr", "")
+                            if "reply" in call_name.lower():
+                                builder_types[target.id] = "reply"
+                            elif "inline" in call_name.lower():
+                                builder_types[target.id] = "inline"
             elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
                 call = stmt.value
                 if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name):
@@ -234,15 +252,42 @@ class AstParser:
                     method = call.func.attr
                     if method in ("append", "extend") and call.args:
                         list_mutations.setdefault(var_name, []).append(call.args[0])
+                    elif method in ("add", "button", "row"):
+                        builders.setdefault(var_name, [])
+                        if method == "button":
+                            btn = self._parse_button_element(call, local_vars)
+                            if btn:
+                                builders[var_name].append(btn)
+                        else:
+                            for arg in call.args:
+                                btn = self._parse_button_element(arg, local_vars)
+                                if btn:
+                                    builders[var_name].append(btn)
+                    elif method == "adjust" and call.args:
+                        adj_val = _ast_to_value(call.args[0], local_vars, self.global_constants)
+                        if isinstance(adj_val, int) and adj_val > 0:
+                            builder_adjust[var_name] = adj_val
 
-        # Look for return statements
+        # Check return statements
         for stmt in ast.walk(func_node):
             if isinstance(stmt, ast.Return) and stmt.value:
                 # Check for delegation / alias: e.g. return self.ui.main_menu_markup(...)
                 if isinstance(stmt.value, ast.Call):
                     delegated_name = getattr(stmt.value.func, "attr", None) or getattr(stmt.value.func, "id", None)
-                    if delegated_name and delegated_name != kb_name:
+                    if delegated_name and delegated_name != kb_name and delegated_name != "as_markup":
                         self.keyboard_aliases[kb_name] = delegated_name
+
+                    # Check if returning builder.as_markup()
+                    if getattr(stmt.value.func, "attr", "") == "as_markup":
+                        b_obj = getattr(stmt.value.func, "value", None)
+                        b_name = getattr(b_obj, "id", "")
+                        if b_name in builders and builders[b_name]:
+                            btn_list = builders[b_name]
+                            adj = builder_adjust.get(b_name, len(btn_list))
+                            rows = [btn_list[i : i + adj] for i in range(0, len(btn_list), adj)]
+                            if rows:
+                                b_type = builder_types.get(b_name, "inline")
+                                return Keyboard(name=kb_name, rows=rows, keyboard_type=b_type, source_file=str(filepath), line_number=stmt.lineno)
 
                 kb = self._parse_keyboard_expr(
                     stmt.value,
@@ -254,6 +299,16 @@ class AstParser:
                 )
                 if kb and kb.rows:
                     return kb
+
+        # If no explicit return, check if builder was created in function
+        for b_name, btn_list in builders.items():
+            if btn_list:
+                adj = builder_adjust.get(b_name, len(btn_list))
+                rows = [btn_list[i : i + adj] for i in range(0, len(btn_list), adj)]
+                if rows:
+                    b_type = builder_types.get(b_name, "inline")
+                    return Keyboard(name=kb_name, rows=rows, keyboard_type=b_type, source_file=str(filepath), line_number=func_node.lineno)
+
         return None
 
     def _parse_keyboard_expr(
@@ -277,8 +332,11 @@ class AstParser:
         for expr in candidate_exprs:
             # Case 1: Dict with "inline_keyboard": [ ... ]
             if isinstance(expr, ast.Dict):
+                kb_type = "inline"
                 for k, v in zip(expr.keys, expr.values):
-                    if isinstance(k, ast.Constant) and k.value == "inline_keyboard":
+                    if isinstance(k, ast.Constant) and k.value in ("inline_keyboard", "keyboard"):
+                        if k.value == "keyboard":
+                            kb_type = "reply"
                         candidate_vals = [v]
                         var_id = None
                         if isinstance(v, ast.Name):
@@ -301,7 +359,7 @@ class AstParser:
                                     rows.append(row)
 
                 if rows:
-                    return Keyboard(name=name, rows=rows, source_file=str(filepath), line_number=lineno)
+                    return Keyboard(name=name, rows=rows, keyboard_type=kb_type, source_file=str(filepath), line_number=lineno)
 
             # Case 2: Direct list of rows [ [ {...} ], [ {...} ] ]
             if isinstance(expr, ast.List):
@@ -310,9 +368,34 @@ class AstParser:
                     if row:
                         rows.append(row)
                 if rows:
-                    return Keyboard(name=name, rows=rows, source_file=str(filepath), line_number=lineno)
+                    return Keyboard(name=name, rows=rows, keyboard_type="inline", source_file=str(filepath), line_number=lineno)
 
-        return None
+            # Case 3: Call InlineKeyboardMarkup(...) / ReplyKeyboardMarkup(...)
+            if isinstance(expr, ast.Call):
+                func_name = getattr(expr.func, "attr", None) or getattr(expr.func, "id", "")
+                if any(k in func_name.lower() for k in ("markup", "keyboard")):
+                    kb_type = "reply" if "reply" in func_name.lower() else "inline"
+                    candidate_kw = None
+                    for kw in expr.keywords:
+                        if kw.arg in ("inline_keyboard", "keyboard"):
+                            candidate_kw = kw.value
+                            break
+                    if not candidate_kw and expr.args:
+                        candidate_kw = expr.args[0]
+
+                    if candidate_kw:
+                        candidate_vals = [candidate_kw]
+                        if isinstance(candidate_kw, ast.Name) and candidate_kw.id in local_vars:
+                            candidate_vals = local_vars[candidate_kw.id]
+                        for val_node in candidate_vals:
+                            if isinstance(val_node, ast.List):
+                                for row_node in val_node.elts:
+                                    row = self._parse_button_row(row_node, local_vars)
+                                    if row:
+                                        rows.append(row)
+                        if rows:
+                            return Keyboard(name=name, rows=rows, keyboard_type=kb_type, source_file=str(filepath), line_number=lineno)
+
 
     def _parse_button_row(self, row_node: ast.AST, local_vars: Dict[str, List[ast.AST]]) -> List[Button]:
         row: List[Button] = []
@@ -322,12 +405,27 @@ class AstParser:
             candidate_rows = local_vars[row_node.id]
 
         for candidate in candidate_rows:
-            if isinstance(candidate, ast.List):
+            if isinstance(candidate, ast.ListComp):
+                # e.g. [KeyboardButton(text=item) for item in items]
+                elt_btn = self._parse_button_element(candidate.elt, local_vars)
+                if elt_btn:
+                    # Try resolving generator iterable if known
+                    iter_resolved = False
+                    if candidate.generators:
+                        iter_obj = getattr(candidate.generators[0], "iter", None)
+                        if isinstance(iter_obj, ast.Name):
+                            iter_name = iter_obj.id
+                            items_val = self.global_constants.get(iter_name)
+                            if isinstance(items_val, list):
+                                iter_resolved = True
+                                for item_str in items_val:
+                                    row.append(Button(text=str(item_str), callback_data=elt_btn.callback_data))
+                    if not iter_resolved:
+                        row.append(elt_btn)
+            elif isinstance(candidate, ast.List):
                 for elt in candidate.elts:
                     candidate_elts = [elt]
                     if isinstance(elt, ast.Name) and elt.id in local_vars:
-                        # For a single variable with conditional branches (e.g. bottom_btn in if/elif/else),
-                        # take the primary assignment instead of stuffing all 5 branches into 1 row!
                         candidate_elts = [local_vars[elt.id][0]]
                     for c_elt in candidate_elts:
                         btn = self._parse_button_element(c_elt, local_vars)
@@ -335,6 +433,8 @@ class AstParser:
                             row.append(btn)
             elif isinstance(candidate, ast.Call):
                 btn = self._parse_helper_call(candidate)
+                if not btn:
+                    btn = self._parse_button_element(candidate, local_vars)
                 if btn:
                     row.append(btn)
             elif isinstance(candidate, ast.Dict):
@@ -377,21 +477,42 @@ class AstParser:
                 line_number=getattr(elt_node, "lineno", None),
             )
 
-        # Call: InlineKeyboardButton(text="...", callback_data="...")
+        # Call: InlineKeyboardButton(text="...", callback_data="...") or KeyboardButton(...)
         if isinstance(elt_node, ast.Call):
             kwargs: Dict[str, Any] = {}
             for kw in elt_node.keywords:
-                kwargs[kw.arg] = _ast_to_value(kw.value, local_vars or {}, self.global_constants)
-            text = str(kwargs.get("text", "") or "Button")
-            cb = str(kwargs.get("callback_data", "") or "") or None
+                val = _ast_to_value(kw.value, local_vars or {}, self.global_constants)
+                if val is None and isinstance(kw.value, ast.Call):
+                    # CallbackData factory call, e.g. NumbersCallbackFactory(action="change", value=-2)
+                    call_name = getattr(kw.value.func, "attr", None) or getattr(kw.value.func, "id", "")
+                    if call_name and call_name not in ("str", "int", "float", "len", "bool", "range"):
+                        action_val = ""
+                        for inner_kw in kw.value.keywords:
+                            if inner_kw.arg in ("action", "act", "type"):
+                                inner_v = _ast_to_value(inner_kw.value, local_vars or {}, self.global_constants)
+                                action_val = f":{inner_v}" if inner_v else ""
+                        val = f"{call_name}{action_val}"
+                kwargs[kw.arg] = val
+
+            text_val = kwargs.get("text")
+            if not text_val and elt_node.args:
+                text_val = _ast_to_value(elt_node.args[0], local_vars or {}, self.global_constants)
+
+            cb_val = kwargs.get("callback_data")
+            if not cb_val and len(elt_node.args) > 1:
+                cb_val = _ast_to_value(elt_node.args[1], local_vars or {}, self.global_constants)
+
+            text = str(text_val or "Button")
+            cb = str(cb_val) if cb_val is not None else None
             return Button(
                 text=text,
                 callback_data=cb,
-                url=str(kwargs.get("url", "")) if "url" in kwargs else None,
+                url=str(kwargs.get("url", "")) if kwargs.get("url") else None,
                 line_number=getattr(elt_node, "lineno", None),
             )
 
         return None
+
 
     def _extract_handlers(self, tree: ast.AST, filepath: Path) -> None:
         """Finds if-else blocks, match-case, or decorators handling callback_data or commands."""
@@ -400,8 +521,9 @@ class AstParser:
                 self._inspect_if_route(node, filepath)
             elif hasattr(ast, "Match") and isinstance(node, ast.Match):
                 self._inspect_match_route(node, filepath)
-            elif isinstance(node, ast.FunctionDef):
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 self._inspect_decorated_handler(node, filepath)
+
 
     def _inspect_match_route(self, match_node: Any, filepath: Path) -> None:
         """Handles Python 3.10+ match ... case statements."""
@@ -596,6 +718,10 @@ class AstParser:
 
         local_body_vars: Dict[str, Any] = {}
         local_body_nodes: Dict[str, ast.AST] = {}
+        builders: Dict[str, List[Button]] = {}
+        builder_types: Dict[str, str] = {}
+        builder_adjust: Dict[str, int] = {}
+
         for stmt in body:
             if isinstance(stmt, ast.Assign):
                 for target in stmt.targets:
@@ -604,6 +730,31 @@ class AstParser:
                         val = _ast_to_value(stmt.value, local_body_vars, self.global_constants)
                         if val is not None:
                             local_body_vars[target.id] = val
+                        if isinstance(stmt.value, ast.Call):
+                            call_fn = getattr(stmt.value.func, "id", "") or getattr(stmt.value.func, "attr", "")
+                            if "reply" in call_fn.lower():
+                                builder_types[target.id] = "reply"
+                            elif "inline" in call_fn.lower():
+                                builder_types[target.id] = "inline"
+            for sub in ast.walk(stmt):
+                if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) and isinstance(sub.func.value, ast.Name):
+                    var_name = sub.func.value.id
+                    method = sub.func.attr
+                    if method in ("add", "button", "row"):
+                        builders.setdefault(var_name, [])
+                        if method == "button":
+                            btn = self._parse_button_element(sub, local_body_vars)
+                            if btn:
+                                builders[var_name].append(btn)
+                        else:
+                            for arg in sub.args:
+                                btn = self._parse_button_element(arg, local_body_vars)
+                                if btn:
+                                    builders[var_name].append(btn)
+                    elif method == "adjust" and sub.args:
+                        adj_val = _ast_to_value(sub.args[0], local_body_vars, self.global_constants)
+                        if isinstance(adj_val, int) and adj_val > 0:
+                            builder_adjust[var_name] = adj_val
 
         for stmt in body:
             for subnode in ast.walk(stmt):
@@ -655,7 +806,27 @@ class AstParser:
                                     if var_id in local_body_nodes:
                                         node_val = local_body_nodes[var_id]
                                         if isinstance(node_val, ast.Call):
-                                            kb_name = getattr(node_val.func, "attr", None) or getattr(node_val.func, "id", "")
+                                            c_func = getattr(node_val.func, "attr", None) or getattr(node_val.func, "id", "")
+                                            if c_func == "as_markup":
+                                                b_obj = getattr(node_val.func, "value", None)
+                                                b_name = getattr(b_obj, "id", "")
+                                                if b_name in builders and builders[b_name]:
+                                                    btn_list = builders[b_name]
+                                                    adj = builder_adjust.get(b_name, len(btn_list))
+                                                    rows = [btn_list[i : i + adj] for i in range(0, len(btn_list), adj)]
+                                                    if rows:
+                                                        b_type = builder_types.get(b_name, "inline")
+                                                        inline_kb = Keyboard(name=f"inline_{lineno}", rows=rows, keyboard_type=b_type, source_file=str(filepath), line_number=lineno)
+                                            elif any(k in c_func.lower() for k in ("markup", "keyboard")):
+                                                inline_kb = self._parse_keyboard_expr(
+                                                    node_val,
+                                                    f"{var_id}_{lineno}",
+                                                    filepath,
+                                                    lineno,
+                                                    {k: [v] for k, v in local_body_nodes.items()},
+                                                )
+                                            else:
+                                                kb_name = c_func
                                         else:
                                             inline_kb = self._parse_keyboard_expr(
                                                 node_val,
@@ -667,44 +838,117 @@ class AstParser:
                                     else:
                                         kb_name = var_id
                                 elif isinstance(kw.value, ast.Call):
-                                    kb_name = getattr(kw.value.func, "attr", None) or getattr(kw.value.func, "id", "")
+                                    c_func = getattr(kw.value.func, "attr", None) or getattr(kw.value.func, "id", "")
+                                    if c_func == "as_markup":
+                                        b_obj = getattr(kw.value.func, "value", None)
+                                        b_name = getattr(b_obj, "id", "")
+                                        if b_name in builders and builders[b_name]:
+                                            btn_list = builders[b_name]
+                                            adj = builder_adjust.get(b_name, len(btn_list))
+                                            rows = [btn_list[i : i + adj] for i in range(0, len(btn_list), adj)]
+                                            if rows:
+                                                b_type = builder_types.get(b_name, "inline")
+                                                inline_kb = Keyboard(name=f"inline_{lineno}", rows=rows, keyboard_type=b_type, source_file=str(filepath), line_number=lineno)
+                                    elif c_func in self.keyboards:
+                                        kb_name = c_func
+                                    elif any(k in c_func for k in ("InlineKeyboardMarkup", "ReplyKeyboardMarkup")):
+                                        inline_kb = self._parse_keyboard_expr(
+                                            kw.value,
+                                            f"inline_{lineno}",
+                                            filepath,
+                                            lineno,
+                                            {k: [v] for k, v in local_body_nodes.items()},
+                                        )
+                                    else:
+                                        kb_name = c_func
+
+
 
         return text_str, kb_name, inline_kb
 
     def _inspect_decorated_handler(self, func_node: ast.FunctionDef, filepath: Path) -> None:
-        """aiogram / telebot decorators: @dp.callback_query(...) or @dp.message(Command('start'))"""
+        """aiogram / telebot decorators: @dp.callback_query(...) or @dp.message(Command(...))"""
         for dec in func_node.decorator_list:
             dec_str = ast.unparse(dec) if hasattr(ast, "unparse") else ""
-            if "callback" in dec_str.lower():
-                route_name = func_node.name
-                match = re.search(r'["\']([\w:-]+)["\']', dec_str)
-                if match:
-                    route_name = match.group(1)
+            dec_low = dec_str.lower()
+
+            # 1. Callback query handlers
+            if "callback" in dec_low:
+                routes: List[str] = []
+                for m in re.finditer(r'F\.data\s*==\s*["\']([\w:-]+)["\']', dec_str):
+                    routes.append(m.group(1))
+                for m in re.finditer(r'F\.data\.startswith\(\s*["\']([\w:-]+)["\']', dec_str):
+                    routes.append(f"{m.group(1)}*")
+                for m in re.finditer(r'(\w+Callback\w*)\.filter\(([^)]*)\)', dec_str):
+                    factory_name = m.group(1)
+                    filter_body = m.group(2)
+                    act_m = re.search(r'action\s*==\s*["\']([\w:-]+)["\']', filter_body)
+                    if act_m:
+                        routes.append(f"{factory_name}:{act_m.group(1)}")
+                    else:
+                        routes.append(f"{factory_name}:*")
+                if not routes:
+                    for m in re.finditer(r'["\']([\w:-]+)["\']', dec_str):
+                        val = m.group(1)
+                        if val not in ("callback_query", "callback", "data", "text", "state"):
+                            routes.append(val)
+                            break
+                if not routes:
+                    routes = [func_node.name]
 
                 text_template, kb_ref, inline_kb = self._find_message_dispatch(func_node.body, filepath)
-                node_id = f"cb:{route_name}"
-                self._add_node(
-                    node_id=node_id,
-                    title=route_name,
-                    text_template=text_template or f"Handler {func_node.name}",
-                    source_file=filepath,
-                    lineno=func_node.lineno,
-                    trigger_type="callback",
-                    trigger_pattern=route_name,
-                    kb_ref=kb_ref,
-                    inline_kb=inline_kb,
-                )
-            elif "message" in dec_str.lower() and "start" in dec_str.lower():
-                text_template, kb_ref, inline_kb = self._find_message_dispatch(func_node.body, filepath)
-                node_id = "cmd:/start"
-                self._add_node(
-                    node_id=node_id,
-                    title="/start",
-                    text_template=text_template or f"Command {func_node.name}",
-                    source_file=filepath,
-                    lineno=func_node.lineno,
-                    trigger_type="command",
-                    trigger_pattern="/start",
-                    kb_ref=kb_ref,
-                    inline_kb=inline_kb,
-                )
+                for route_name in routes:
+                    node_id = f"cb:{route_name}"
+                    self._add_node(
+                        node_id=node_id,
+                        title=route_name,
+                        text_template=text_template or f"Handler {func_node.name}",
+                        source_file=filepath,
+                        lineno=func_node.lineno,
+                        trigger_type="callback",
+                        trigger_pattern=route_name,
+                        kb_ref=kb_ref,
+                        inline_kb=inline_kb,
+                    )
+
+            # 2. Message / Command handlers
+            elif "message" in dec_low or "command" in dec_low:
+                commands: List[str] = []
+                for m in re.finditer(r'Command\(\s*["\']([\w-]+)["\']', dec_str):
+                    commands.append(m.group(1))
+                for m in re.finditer(r'commands\s*=\s*\[([^\]]+)\]', dec_str):
+                    for item in re.finditer(r'["\']([\w-]+)["\']', m.group(1)):
+                        commands.append(item.group(1))
+                if not commands and (func_node.name.startswith("cmd_") or func_node.name.startswith("command_")):
+                    commands.append(func_node.name.split("_", 1)[1])
+
+                if commands:
+                    text_template, kb_ref, inline_kb = self._find_message_dispatch(func_node.body, filepath)
+                    for cmd in commands:
+                        c_clean = cmd.lstrip("/")
+                        node_id = f"cmd:/{c_clean}"
+                        self._add_node(
+                            node_id=node_id,
+                            title=f"/{c_clean}",
+                            text_template=text_template or f"Command /{c_clean}",
+                            source_file=filepath,
+                            lineno=func_node.lineno,
+                            trigger_type="command",
+                            trigger_pattern=f"/{c_clean}",
+                            kb_ref=kb_ref,
+                            inline_kb=inline_kb,
+                        )
+                elif "start" in dec_low:
+                    text_template, kb_ref, inline_kb = self._find_message_dispatch(func_node.body, filepath)
+                    self._add_node(
+                        node_id="cmd:/start",
+                        title="/start",
+                        text_template=text_template or f"Command {func_node.name}",
+                        source_file=filepath,
+                        lineno=func_node.lineno,
+                        trigger_type="command",
+                        trigger_pattern="/start",
+                        kb_ref=kb_ref,
+                        inline_kb=inline_kb,
+                    )
+
