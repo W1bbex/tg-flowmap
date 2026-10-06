@@ -33,7 +33,12 @@ def run_analysis(
     else:
         parser.parse_dir(target_path)
 
-    analyzer = GraphAnalyzer(parser.nodes, parser.keyboards)
+    analyzer = GraphAnalyzer(
+        parser.nodes,
+        parser.keyboards,
+        screen_aliases=parser.screen_aliases,
+        hub_return_nodes=parser.hub_return_nodes,
+    )
     bot_map = analyzer.build_map()
 
     stats = bot_map.stats
@@ -44,6 +49,7 @@ def run_analysis(
     print(f"Всего экранов:   {stats.get('total_nodes', 0)}")
     print(f"Всего связей:    {stats.get('total_edges', 0)}")
     print(f"Клавиатур найдено: {len(parser.keyboards)}")
+    print(f"Дублирующихся экранов: {stats.get('duplicate_screens', 0)}")
     print(f"Тупиков (Dead-end): {stats.get('dead_ends', 0)}")
     print(f"Ошибок эмодзи:   {stats.get('broken_emojis', 0)}")
     print(f"Без кнопки Назад: {stats.get('missing_backs', 0)}")

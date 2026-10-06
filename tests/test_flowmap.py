@@ -282,3 +282,62 @@ async def help_handler(cb: types.CallbackQuery):
     finally:
         p.unlink(missing_ok=True)
 
+
+def test_screen_deduplication_and_aliases():
+    code = '''
+def main_menu():
+    return {"inline_keyboard": [[{"text": "LED", "callback_data": "led_menu"}]]}
+
+def led_markup():
+    return {"inline_keyboard": [[{"text": "Вкл", "callback_data": "led_on"}]]}
+
+def handle(data, text):
+    if text == "/start":
+        send_message("Старт", reply_markup=main_menu())
+    elif data == "menu":
+        send_message("Меню", reply_markup=main_menu())
+    elif text == "/led":
+        send_message("LED Меню", reply_markup=led_markup())
+    elif data == "led_menu":
+        send_message("LED Меню", reply_markup=led_markup())
+    elif data == "console_close":
+        send_message("Возврат", reply_markup=main_menu())
+'''
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(code)
+        p = Path(f.name)
+
+    try:
+        parser = AstParser()
+        parser.parse_file(p)
+
+        # /led should be merged into cb:led_menu
+        assert "cmd:/led" not in parser.nodes
+        assert "cb:led_menu" in parser.nodes
+        assert "/led" in parser.nodes["cb:led_menu"].aliases
+
+        # console_close should be converted to callback returning to hub
+        assert "cb:console_close" in parser.nodes
+        assert parser.nodes["cb:console_close"].node_type == "callback"
+        assert "cb:console_close" in parser.hub_return_nodes
+
+        analyzer = GraphAnalyzer(
+            parser.nodes,
+            parser.keyboards,
+            screen_aliases=parser.screen_aliases,
+            hub_return_nodes=parser.hub_return_nodes,
+        )
+        bot_map = analyzer.build_map()
+
+        # Check return edge from console_close to cb:menu exists
+        return_edges = [e for e in bot_map.edges if e.from_node_id == "cb:console_close" and e.to_node_id == "cb:menu"]
+        assert len(return_edges) == 1
+        assert return_edges[0].is_back is True
+
+        # Check duplicate screens are reported for menu vs /start sharing main_menu
+        dup_issues = [i for i in bot_map.issues if i.issue_type == "duplicate_screen"]
+        assert len(dup_issues) >= 1
+    finally:
+        p.unlink(missing_ok=True)
+
+

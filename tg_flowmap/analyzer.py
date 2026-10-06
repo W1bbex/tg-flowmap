@@ -7,9 +7,17 @@ from tg_flowmap.models import BotMap, Button, Edge, Issue, Keyboard, MessageNode
 
 
 class GraphAnalyzer:
-    def __init__(self, nodes: Dict[str, MessageNode], keyboards: Dict[str, Keyboard]):
+    def __init__(
+        self,
+        nodes: Dict[str, MessageNode],
+        keyboards: Dict[str, Keyboard],
+        screen_aliases: Optional[Dict[str, str]] = None,
+        hub_return_nodes: Optional[Set[str]] = None,
+    ):
         self.nodes = nodes
         self.keyboards = keyboards
+        self.screen_aliases = screen_aliases or {}
+        self.hub_return_nodes = hub_return_nodes or set()
         self.edges: List[Edge] = []
         self.issues: List[Issue] = []
 
@@ -84,6 +92,21 @@ class GraphAnalyzer:
                     )
                 )
 
+        # Step 1.5: Connect hub return nodes (e.g. console_close returning to cb:menu)
+        hub_target = "cb:menu" if "cb:menu" in self.nodes else "cmd:/start"
+        for ret_id in self.hub_return_nodes:
+            if ret_id in self.nodes and hub_target in self.nodes:
+                self.edges.append(
+                    Edge(
+                        from_node_id=ret_id,
+                        to_node_id=hub_target,
+                        button_text="В меню",
+                        callback_data="menu",
+                        is_back=True,
+                        status="ok",
+                    )
+                )
+
         # Step 2: Check for dangling handlers (nodes that are never called)
         called_targets = {e.to_node_id for e in self.edges}
         for node_id, node in self.nodes.items():
@@ -103,6 +126,31 @@ class GraphAnalyzer:
                     )
                 )
 
+        # Step 3: Check for duplicate screens & redundant flows
+        checked_pairs = set()
+        for id1, n1 in self.nodes.items():
+            if not n1.keyboard or not n1.keyboard.rows:
+                continue
+            for id2, n2 in self.nodes.items():
+                if id1 >= id2 or not n2.keyboard or not n2.keyboard.rows:
+                    continue
+                pair_key = (id1, id2)
+                if pair_key in checked_pairs:
+                    continue
+                checked_pairs.add(pair_key)
+
+                if n1.keyboard.name and n1.keyboard.name == n2.keyboard.name:
+                    self.issues.append(
+                        Issue(
+                            severity="warning",
+                            issue_type="duplicate_screen",
+                            message=f"Экраны '{n1.title}' и '{n2.title}' используют одинаковую клавиатуру '{n1.keyboard.name}'. Рекомендуется объединить обработчики или сделать редирект.",
+                            node_id=id1,
+                            source_file=n1.source_file,
+                            line_number=n1.line_number,
+                        )
+                    )
+
         stats = {
             "total_nodes": len(self.nodes),
             "total_edges": len(self.edges),
@@ -110,6 +158,7 @@ class GraphAnalyzer:
             "dead_ends": sum(1 for i in self.issues if i.issue_type == "dead_end"),
             "broken_emojis": sum(1 for i in self.issues if i.issue_type == "null_emoji"),
             "missing_backs": sum(1 for i in self.issues if i.issue_type == "missing_back"),
+            "duplicate_screens": sum(1 for i in self.issues if i.issue_type == "duplicate_screen"),
         }
 
         return BotMap(nodes=self.nodes, edges=self.edges, issues=self.issues, stats=stats)

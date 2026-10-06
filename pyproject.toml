@@ -24,3 +24,7 @@ tg-flowmap = "tg_flowmap.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tg_flowmap*"]
+
+[tool.setuptools.package-data]
+tg_flowmap = ["templates/*"]
+

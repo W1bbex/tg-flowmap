@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>tg-flowmap — Иерархическое дерево Telegram-бота</title>
+  <style>
+/* __STYLES__ */
+  </style>
+</head>
+<body>
+<header>
+    <div class="brand">🧭 tg-flowmap <span>// граф экранов</span></div>
+    <div class="type-filter-group" id="type-filters">
+      <button class="filter-chip active" data-type="all">
+        <span class="chip-dot dot-all"></span> Все <span class="chip-count" id="count-all">0</span>
+      </button>
+      <button class="filter-chip" data-type="command">
+        <span class="chip-dot dot-command"></span> ⚡ Команды <span class="chip-count" id="count-command">0</span>
+      </button>
+      <button class="filter-chip" data-type="message">
+        <span class="chip-dot dot-message"></span> 💬 Экраны <span class="chip-count" id="count-message">0</span>
+      </button>
+      <button class="filter-chip" data-type="callback">
+        <span class="chip-dot dot-callback"></span> 🔘 Действия <span class="chip-count" id="count-callback">0</span>
+      </button>
+      <button class="filter-chip" data-type="popup">
+        <span class="chip-dot dot-popup"></span> 🔔 Всплывающие <span class="chip-count" id="count-popup">0</span>
+      </button>
+    </div>
+    <div class="toolbar-actions">
+      <input type="text" id="search-input" class="search-box" placeholder="Поиск кнопки или экрана..." />
+      <button class="btn-tool" id="btn-back-edges" title="Показать / скрыть обратные стрелки «Назад» и «В меню»">↩ Возвраты</button>
+      <button class="btn-tool active" id="btn-labels" title="Включить / скрыть подписи на стрелочках">🏷️ Подписи</button>
+      <button class="btn-tool active" id="btn-orphans" title="Показать или скрыть несвязанные экраны и обработчики">📦 Дополнительные</button>
+      <button class="btn-tool" id="btn-fit" title="Вписать всё в экран">📐 Вписать всё</button>
+    </div>
+  </header>
+
+  <div id="viewport">
+    <div id="canvas-world">
+      <svg id="svg-layer">
+        <defs>
+          <marker id="arrow-green" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#31b545" />
+          </marker>
+          <marker id="arrow-blue" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#2ea6ff" />
+          </marker>
+          <marker id="arrow-red" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#df3f40" />
+          </marker>
+          <marker id="arrow-back" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#94a3b8" />
+          </marker>
+          <marker id="arrow-dead" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#ef4444" />
+          </marker>
+          <marker id="arrow-default" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 z" fill="#38bdf8" />
+          </marker>
+        </defs>
+        <g id="edges-group"></g>
+      </svg>
+      <div class="edge-labels-container" id="edge-labels-container"></div>
+      <div class="nodes-container" id="nodes-container"></div>
+    </div>
+
+    <div class="hud-controls">
+      <button class="hud-btn" id="btn-zoom-in" title="Приблизить">+</button>
+      <button class="hud-btn" id="btn-zoom-out" title="Отдалить">−</button>
+      <button class="hud-btn" id="btn-reset" title="К началу">⌂</button>
+    </div>
+  </div>
+
+  <script>
+    const rawData = __DATA_JSON__;
+
+/* __SCRIPTS__ */
+  </script>
+</body>
+</html>

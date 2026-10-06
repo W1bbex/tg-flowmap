@@ -108,6 +108,8 @@ class AstParser:
         self.nodes: Dict[str, MessageNode] = {}
         self.raw_files: Dict[str, str] = {}
         self.keyboard_aliases: Dict[str, str] = {}
+        self.screen_aliases: Dict[str, str] = {}
+        self.hub_return_nodes: Set[str] = set()
         self.global_constants: Dict[str, Any] = {}
 
     def parse_dir(self, dirpath: Path, recursive: bool = True) -> None:
@@ -172,6 +174,8 @@ class AstParser:
         for filepath, tree in parsed_trees:
             self._extract_handlers(tree, filepath)
 
+        self._consolidate_duplicate_screens()
+
     def parse_file(self, filepath: Path) -> None:
         try:
             content = filepath.read_text(encoding="utf-8", errors="replace")
@@ -190,6 +194,57 @@ class AstParser:
             if target in self.keyboards and alias not in self.keyboards:
                 self.keyboards[alias] = self.keyboards[target]
         self._extract_handlers(tree, filepath)
+        self._consolidate_duplicate_screens()
+
+    def _consolidate_duplicate_screens(self) -> None:
+        """Merges duplicate screens (e.g. /led command with led_menu callback)
+        and converts pseudo-screens that just return to hub (like console_close)
+        into actions transitioning to the hub.
+        """
+        hub_id = "cb:menu"
+        hub_node = self.nodes.get(hub_id)
+        hub_kb_name = getattr(hub_node.keyboard, "name", "main_menu_markup") if (hub_node and hub_node.keyboard) else "main_menu_markup"
+
+        to_remove = set()
+
+        # Pass A: Merge commands that open existing callback screens
+        for node_id, node in list(self.nodes.items()):
+            if node_id.startswith("cmd:") and node_id not in ("cmd:/start", "cmd:/help"):
+                cmd_clean = node_id.split("cmd:/", 1)[-1].strip()
+                if not node.keyboard:
+                    continue
+
+                target_screen = None
+                for other_id, other_node in self.nodes.items():
+                    if other_id == node_id or not other_id.startswith("cb:"):
+                        continue
+                    if other_node.keyboard and other_node.keyboard.name == node.keyboard.name:
+                        target_screen = other_node
+                        break
+                    other_clean = other_id.split("cb:", 1)[-1]
+                    if other_clean in (f"{cmd_clean}_menu", f"{cmd_clean}_open", cmd_clean):
+                        target_screen = other_node
+                        break
+
+                if target_screen:
+                    cmd_alias = f"/{cmd_clean}"
+                    if cmd_alias not in target_screen.aliases:
+                        target_screen.aliases.append(cmd_alias)
+                    self.screen_aliases[node_id] = target_screen.id
+                    to_remove.add(node_id)
+
+        # Pass B: Convert handlers that just re-send hub keyboard (like console_close)
+        for node_id, node in list(self.nodes.items()):
+            if node_id in (hub_id, "cmd:/start") or node_id in to_remove:
+                continue
+
+            if node.keyboard and node.keyboard.name == hub_kb_name:
+                node.node_type = "callback"
+                node.keyboard = None
+                self.hub_return_nodes.add(node_id)
+
+        for rid in to_remove:
+            self.nodes.pop(rid, None)
 
     def _extract_global_constants(self, tree: ast.AST) -> None:
         """Collects top-level module constants like CANONICAL_ICONS, EMOJI_BTN_*, etc."""
