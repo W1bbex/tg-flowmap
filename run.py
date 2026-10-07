@@ -13,12 +13,41 @@ if str(SCRIPT_DIR) not in sys.path:
 from tg_flowmap.cli import run_analysis
 
 
+def get_path_mtime(p: Path) -> float:
+    """Returns max modification time of directory or its entry points."""
+    try:
+        mtime = os.path.getmtime(p)
+        for f in ("bot.py", "main.py", "app.py"):
+            pf = p / f
+            if pf.exists():
+                mtime = max(mtime, os.path.getmtime(pf))
+        return mtime
+    except Exception:
+        return 0.0
+
+
+def is_telegram_bot_dir(p: Path) -> bool:
+    """Checks if directory contains Telegram bot code."""
+    if not p.is_dir():
+        return False
+    if (p / "bot.py").exists():
+        return True
+    for f in ("main.py", "app.py"):
+        pf = p / f
+        if pf.exists():
+            try:
+                head = pf.read_text(encoding="utf-8", errors="ignore")[:3000]
+                if any(k in head for k in ("aiogram", "telebot", "telegram", "TeleBot", "Dispatcher", "Bot(")):
+                    return True
+            except Exception:
+                pass
+    return False
+
+
 def discover_candidate_bots() -> list[Path]:
     """Dynamically looks for Telegram bots in nearby project directories."""
     candidates: list[Path] = []
     
-    # Check parent workspace roots dynamically (e.g., C:\Projects)
-    # SCRIPT_DIR is .../tg-flowmap, parent is .github, parent.parent is Projects
     workspace_candidates = [
         SCRIPT_DIR.parent.parent,
         SCRIPT_DIR.parent,
@@ -28,25 +57,69 @@ def discover_candidate_bots() -> list[Path]:
         if not ws.exists():
             continue
 
-        # Scan subfolders in workspace for bot.py or handlers
         try:
             for item in ws.iterdir():
-                if item.is_dir() and not item.name.startswith((".", "_")) and item != SCRIPT_DIR:
-                    if (item / "bot.py").exists() or (item / "main.py").exists():
-                        if item not in candidates:
-                            candidates.append(item)
-                    # Skip heavy tutorial/samples archives from filling the candidates list
-                    if "tutorial" not in item.name.lower() and "sample" not in item.name.lower():
-                        for sub in item.iterdir():
-                            if sub.is_dir() and (sub / "bot.py").exists() and sub not in candidates:
+                if not item.is_dir() or item.name.startswith((".", "_")) or item == SCRIPT_DIR:
+                    continue
+                if is_telegram_bot_dir(item) and item not in candidates:
+                    candidates.append(item)
+                if "tutorial" not in item.name.lower() and "sample" not in item.name.lower():
+                    for sub in item.iterdir():
+                        if sub.is_dir() and not sub.name.startswith((".", "_", "venv")):
+                            if is_telegram_bot_dir(sub) and sub not in candidates:
                                 candidates.append(sub)
         except Exception:
             pass
 
-    return candidates[:6]
+    candidates.sort(key=get_path_mtime, reverse=True)
+    return candidates[:10]
 
 
-def interactive_mode() -> None:
+def resolve_user_input_path(raw_text: str, candidates: list[Path]) -> Path | None:
+    """Smartly resolves user input to an existing path (absolute, relative, drag&drop, or fuzzy name)."""
+    clean = raw_text.strip().strip('"').strip("'")
+    if not clean:
+        return None
+
+    # 1. Exact existing path
+    p = Path(clean)
+    if p.exists():
+        return p
+
+    # 2. Check relative to parent workspace roots (e.g. C:\Projects\<clean>)
+    workspace_roots = [
+        SCRIPT_DIR.parent.parent,
+        SCRIPT_DIR.parent,
+        Path.cwd(),
+    ]
+    for ws in workspace_roots:
+        cand = ws / clean
+        if cand.exists():
+            return cand
+
+    # 3. Fuzzy substring matching across known candidates
+    clean_low = clean.lower().replace("/", "\\")
+    matches = [
+        c for c in candidates 
+        if clean_low in str(c).lower() or clean_low in c.name.lower()
+    ]
+    if len(matches) == 1:
+        print(f"✔ Автоматически определён проект: {matches[0]}")
+        return matches[0]
+    elif len(matches) > 1:
+        print(f"\n💡 Найдено несколько совпадений для '{clean}':")
+        for idx, m in enumerate(matches, 1):
+            print(f"  [{idx}] {m}")
+        sub_c = input(f"Выберите вариант [1]: ").strip()
+        if not sub_c or sub_c == "1":
+            return matches[0]
+        if sub_c.isdigit() and 1 <= int(sub_c) <= len(matches):
+            return matches[int(sub_c) - 1]
+
+    return None
+
+
+def interactive_mode(initial_target: Path | None = None) -> None:
     if sys.platform == "win32":
         try:
             sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -59,37 +132,50 @@ def interactive_mode() -> None:
     print("=" * 64)
     print()
 
+    target_path = initial_target
     candidates = discover_candidate_bots()
-    target_path: Path | None = None
-
-    if candidates:
-        print("💡 Обнаруженные проекты Telegram-ботов по соседству:")
-        for idx, cand in enumerate(candidates, 1):
-            print(f"  [{idx}] {cand.resolve()}")
-        print("  [0] Указать другой путь (ввести вручную или перетащить папку)")
-        print()
-
-        choice = input("Выберите вариант [1]: ").strip()
-        if not choice:
-            choice = "1"
-
-        if choice.isdigit():
-            c_idx = int(choice)
-            if 1 <= c_idx <= len(candidates):
-                target_path = candidates[c_idx - 1]
 
     if not target_path:
-        print()
-        raw_input = input("📁 Введите путь к папке/файлу бота (или перетащите сюда): ").strip()
-        clean_path = raw_input.strip().strip('"').strip("'")
-        if not clean_path:
-            print("[ERROR] Путь не указан!")
-            return
-        target_path = Path(clean_path)
+        if candidates:
+            print("💡 Обнаруженные проекты Telegram-ботов по соседству:")
+            for idx, cand in enumerate(candidates, 1):
+                print(f"  [{idx}] {cand.resolve()}")
+            print("  [0] Указать другой путь (ввести вручную или перетащить папку)")
+            print()
 
-    if not target_path.exists():
-        print(f"\n[ERROR] Указанный путь не существует: {target_path}")
-        return
+            raw_choice = input("Выберите вариант [1] или вставьте путь: ").strip()
+            clean_choice = raw_choice.strip().strip('"').strip("'")
+
+            if not clean_choice:
+                # Default Enter -> [1]
+                target_path = candidates[0]
+            elif clean_choice.isdigit():
+                c_idx = int(clean_choice)
+                if 1 <= c_idx <= len(candidates):
+                    target_path = candidates[c_idx - 1]
+                elif c_idx == 0:
+                    target_path = None
+                else:
+                    print(f"[WARN] Вариант [{c_idx}] не в списке.")
+            else:
+                # User entered/pasted a path or name directly!
+                target_path = resolve_user_input_path(clean_choice, candidates)
+                if not target_path:
+                    print(f"[WARN] Путь '{clean_choice}' не найден.")
+
+        # Fallback loop if target_path still not selected or invalid
+        while not target_path:
+            print()
+            raw_input = input("📁 Введите путь к папке/файлу бота (или перетащите сюда): ").strip()
+            clean_input = raw_input.strip().strip('"').strip("'")
+            if not clean_input:
+                print("[ERROR] Путь не указан!")
+                continue
+            resolved = resolve_user_input_path(clean_input, candidates)
+            if resolved:
+                target_path = resolved
+                break
+            print(f"[ERROR] Указанный путь не существует: {clean_input}")
 
     bot_name = target_path.name
     output_dir = SCRIPT_DIR / "output"
@@ -167,8 +253,18 @@ def wait_for_exit(timeout_seconds: int = 60) -> None:
 
 def main() -> None:
     if len(sys.argv) > 1:
-        from tg_flowmap.cli import main as cli_main
-        cli_main()
+        first_arg = sys.argv[1].strip().strip('"').strip("'")
+        # Check if launched via drag & drop or path parameter directly
+        if not first_arg.startswith("-") and Path(first_arg).exists():
+            try:
+                interactive_mode(initial_target=Path(first_arg))
+            except KeyboardInterrupt:
+                print("\nПрервано пользователем.")
+            finally:
+                wait_for_exit(60)
+        else:
+            from tg_flowmap.cli import main as cli_main
+            cli_main()
     else:
         try:
             interactive_mode()
