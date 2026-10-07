@@ -38,28 +38,39 @@ const ICON_SYMBOLS = {
     const nodesContainer = document.getElementById("nodes-container");
 
     let isTransformPending = false;
+    let isInteracting = false;
 
-    function scheduleTransform() {
+    function scheduleTransform(interacting = true) {
+      if (interacting && !isInteracting) {
+        isInteracting = true;
+        world.style.willChange = "transform";
+      }
       if (!isTransformPending) {
         isTransformPending = true;
         requestAnimationFrame(() => {
-          updateTransform();
+          updateTransform(isInteracting);
           isTransformPending = false;
         });
       }
     }
 
-    function updateTransform() {
+    function updateTransform(hardwareAccelerated = false) {
       const rx = Math.round(panX);
       const ry = Math.round(panY);
-      world.style.transform = `translate3d(${rx}px, ${ry}px, 0) scale(${scale})`;
-      if (scale < 0.55) {
+      if (hardwareAccelerated) {
+        world.style.transform = `translate3d(${rx}px, ${ry}px, 0) scale(${scale})`;
+      } else {
+        world.style.willChange = "";
+        world.style.transform = `translate(${rx}px, ${ry}px) scale(${scale})`;
+        isInteracting = false;
+      }
+      if (scale < 0.25) {
         viewport.classList.add("zoomed-out");
       } else {
         viewport.classList.remove("zoomed-out");
       }
     }
-    updateTransform();
+    updateTransform(false);
 
     // Smooth Flying Animation Engine
     function smoothFlyTo(targetPanX, targetPanY, targetScale = scale, duration = 650) {
@@ -71,7 +82,7 @@ const ICON_SYMBOLS = {
         panX = targetPanX;
         panY = targetPanY;
         scale = targetScale;
-        updateTransform();
+        updateTransform(false);
         return;
       }
 
@@ -92,15 +103,17 @@ const ICON_SYMBOLS = {
         panX = startPanX + (targetPanX - startPanX) * ease;
         panY = startPanY + (targetPanY - startPanY) * ease;
         scale = startScale + (targetScale - startScale) * ease;
-        updateTransform();
 
         if (p < 1.0) {
+          updateTransform(true);
           animFrameId = requestAnimationFrame(frame);
         } else {
           animFrameId = null;
+          updateTransform(false);
         }
       }
 
+      world.style.willChange = "transform";
       animFrameId = requestAnimationFrame(frame);
     }
 
@@ -115,22 +128,25 @@ const ICON_SYMBOLS = {
       startX = e.clientX - panX;
       startY = e.clientY - panY;
       viewport.classList.add("panning");
+      world.style.willChange = "transform";
     });
 
     window.addEventListener("mousemove", (e) => {
       if (!isPanning) return;
       panX = e.clientX - startX;
       panY = e.clientY - startY;
-      scheduleTransform();
+      scheduleTransform(true);
     });
 
     window.addEventListener("mouseup", () => {
       if (isPanning) {
         isPanning = false;
         viewport.classList.remove("panning");
+        updateTransform(false);
       }
     });
 
+    let wheelStopTimer = null;
     viewport.addEventListener("wheel", (e) => {
       e.preventDefault();
       if (animFrameId) {
@@ -149,7 +165,11 @@ const ICON_SYMBOLS = {
       const mouseY = e.clientY - rect.top;
       panX = mouseX - (mouseX - panX) * (scale / oldScale);
       panY = mouseY - (mouseY - panY) * (scale / oldScale);
-      scheduleTransform();
+      scheduleTransform(true);
+      if (wheelStopTimer) clearTimeout(wheelStopTimer);
+      wheelStopTimer = setTimeout(() => {
+        updateTransform(false);
+      }, 100);
     }, { passive: false });
 
     document.getElementById("btn-zoom-in").addEventListener("click", () => {
@@ -497,84 +517,90 @@ const ICON_SYMBOLS = {
 
     const mainTreeWidth = computeSubtreeWidth(rootId);
 
-    // 5. Place Secondary Commands in a Compact 3-Column Deck
+    function estimateCardHeight(nodeId) {
+      const node = rawData.nodes[nodeId];
+      if (!node) return 260;
+      let h = 55;
+      const txt = node.text_template || "";
+      const lines = txt.split("\n").length;
+      h += Math.max(65, Math.min(450, lines * 19 + 35));
+      if (node.keyboard && node.keyboard.rows) {
+        h += node.keyboard.rows.length * 44 + 16;
+      }
+      return Math.max(220, h);
+    }
+
+    function layoutDeck(nodeIds, cols, startX, startY, colGap = 60, rowGap = 50) {
+      if (!nodeIds || nodeIds.length === 0) {
+        return { box: null, maxX: startX, maxY: startY, nodeIds: [], cols, startX, startY, rowGap, colGap };
+      }
+
+      const numRows = Math.ceil(nodeIds.length / cols);
+      const rowHeights = new Array(numRows).fill(0);
+
+      nodeIds.forEach((id, idx) => {
+        const r = Math.floor(idx / cols);
+        const estH = estimateCardHeight(id);
+        rowHeights[r] = Math.max(rowHeights[r], estH);
+      });
+
+      const rowY = [startY];
+      for (let r = 0; r < numRows; r++) {
+        rowY.push(rowY[r] + rowHeights[r] + rowGap);
+      }
+
+      let maxX = startX;
+      nodeIds.forEach((id, idx) => {
+        const c = idx % cols;
+        const r = Math.floor(idx / cols);
+        const gx = startX + c * (CARD_W + colGap);
+        const gy = rowY[r];
+        nodePositions.set(id, { x: gx, y: gy });
+        maxX = Math.max(maxX, gx + CARD_W);
+      });
+
+      const maxY = rowY[numRows];
+      return {
+        box: {
+          x: startX - 20,
+          y: startY - 20,
+          w: maxX - startX + 40,
+          h: maxY - startY + 40,
+          count: nodeIds.length,
+        },
+        maxX,
+        maxY,
+        nodeIds,
+        cols,
+        startX,
+        startY,
+        rowGap,
+        colGap
+      };
+    }
+
+    // 5. Place Secondary Commands in a Dynamic Multi-Row Deck
     const secondaryCmds = Object.keys(rawData.nodes).filter(k => k.startsWith("cmd:") && !nodePositions.has(k));
-    let cmdBox = null;
-    let maxCmdX = mainTreeWidth + 120;
-    let maxCmdY = 0;
-    if (secondaryCmds.length > 0) {
-      const cmdCols = 3;
-      const cmdStartX = mainTreeWidth + 120;
-      secondaryCmds.forEach((id, idx) => {
-        const c = idx % cmdCols;
-        const r = Math.floor(idx / cmdCols);
-        const gx = cmdStartX + c * (CARD_W + 50);
-        const gy = r * (CARD_H + 50);
-        nodePositions.set(id, { x: gx, y: gy });
-        maxCmdX = Math.max(maxCmdX, gx + CARD_W);
-        maxCmdY = Math.max(maxCmdY, gy + CARD_H);
-      });
-      cmdBox = {
-        x: cmdStartX - 20,
-        y: -10,
-        w: maxCmdX - cmdStartX + 40,
-        h: maxCmdY + 50,
-        count: secondaryCmds.length,
-      };
-    }
+    const cmdStartX = mainTreeWidth + 120;
+    const cmdLayout = layoutDeck(secondaryCmds, 3, cmdStartX, 0, 60, 50);
+    const cmdBox = cmdLayout.box;
+    const maxCmdX = cmdLayout.maxX;
+    const maxCmdY = cmdLayout.maxY;
 
-    // 6. Place Utility / Popups in a Compact 2-Column Deck
+    // 6. Place Utility / Popups in a Dynamic Multi-Row Deck
     const utilNodesList = Object.keys(rawData.nodes).filter(k => UTILITY_TARGETS.has(k) && !nodePositions.has(k));
-    let utilBox = null;
-    let maxUtilX = maxCmdX + 70;
-    let maxUtilY = 0;
-    if (utilNodesList.length > 0) {
-      const utilCols = 2;
-      const utilStartX = maxCmdX + 70;
-      utilNodesList.forEach((id, idx) => {
-        const c = idx % utilCols;
-        const r = Math.floor(idx / utilCols);
-        const gx = utilStartX + c * (CARD_W + 50);
-        const gy = r * (CARD_H + 50);
-        nodePositions.set(id, { x: gx, y: gy });
-        maxUtilX = Math.max(maxUtilX, gx + CARD_W);
-        maxUtilY = Math.max(maxUtilY, gy + CARD_H);
-      });
-      utilBox = {
-        x: utilStartX - 20,
-        y: -10,
-        w: maxUtilX - utilStartX + 40,
-        h: maxUtilY + 50,
-        count: utilNodesList.length,
-      };
-    }
+    const utilStartX = maxCmdX + 70;
+    const utilLayout = layoutDeck(utilNodesList, 2, utilStartX, 0, 60, 50);
+    const utilBox = utilLayout.box;
+    const maxUtilX = utilLayout.maxX;
+    const maxUtilY = utilLayout.maxY;
 
-    // 7. Place Remaining Handlers in a Compact 4-Column Deck below
+    // 7. Place Remaining Handlers in a Dynamic Multi-Row Deck below
     const unvisited = Object.keys(rawData.nodes).filter(k => !nodePositions.has(k));
-    let remBox = null;
-    if (unvisited.length > 0) {
-      const remCols = 4;
-      const remStartX = mainTreeWidth + 120;
-      const remStartY = Math.max(maxCmdY, maxUtilY) + 100;
-      let maxRemX = remStartX;
-      let maxRemY = remStartY;
-      unvisited.forEach((id, idx) => {
-        const c = idx % remCols;
-        const r = Math.floor(idx / remCols);
-        const gx = remStartX + c * (CARD_W + 50);
-        const gy = remStartY + r * (CARD_H + 50);
-        nodePositions.set(id, { x: gx, y: gy });
-        maxRemX = Math.max(maxRemX, gx + CARD_W);
-        maxRemY = Math.max(maxRemY, gy + CARD_H);
-      });
-      remBox = {
-        x: remStartX - 20,
-        y: remStartY - 40,
-        w: maxRemX - remStartX + 40,
-        h: maxRemY - remStartY + 80,
-        count: unvisited.length,
-      };
-    }
+    const remStartX = mainTreeWidth + 120;
+    const remStartY = Math.max(maxCmdY, maxUtilY) + 80;
+    const remLayout = layoutDeck(unvisited, 4, remStartX, remStartY, 60, 50);
+    const remBox = remLayout.box;
 
     // Render Canvas Zone Boxes
     if (cmdBox) {
@@ -631,6 +657,56 @@ const ICON_SYMBOLS = {
     for (const [nodeId, node] of Object.entries(rawData.nodes)) {
       createCard(nodeId, node);
     }
+
+    // Pass 2: Exact DOM-measured height refinement to ensure zero collisions
+    function refineDeckWithDomHeights(deckLayout, zoneClass, customStartY = null) {
+      if (!deckLayout || !deckLayout.nodeIds || deckLayout.nodeIds.length === 0) return (customStartY !== null ? customStartY : 0);
+      const { nodeIds, cols, startX, rowGap, colGap } = deckLayout;
+      const startY = (customStartY !== null) ? customStartY : deckLayout.startY;
+      const numRows = Math.ceil(nodeIds.length / cols);
+      const measuredRowH = new Array(numRows).fill(0);
+
+      nodeIds.forEach((id, idx) => {
+        const r = Math.floor(idx / cols);
+        const cardEl = nodeElements.get(id);
+        const h = cardEl ? (cardEl.offsetHeight || 260) : 260;
+        measuredRowH[r] = Math.max(measuredRowH[r], h);
+      });
+
+      const rowY = [startY];
+      for (let r = 0; r < numRows; r++) {
+        rowY.push(rowY[r] + measuredRowH[r] + rowGap);
+      }
+
+      let maxX = startX;
+      nodeIds.forEach((id, idx) => {
+        const c = idx % cols;
+        const r = Math.floor(idx / cols);
+        const gx = startX + c * (CARD_W + (colGap || 60));
+        const gy = rowY[r];
+        nodePositions.set(id, { x: gx, y: gy });
+        const cardEl = nodeElements.get(id);
+        if (cardEl) {
+          cardEl.style.left = `${gx}px`;
+          cardEl.style.top = `${gy}px`;
+        }
+        maxX = Math.max(maxX, gx + CARD_W);
+      });
+
+      const maxY = rowY[numRows];
+      const zoneEl = document.querySelector(`.${zoneClass}`);
+      if (zoneEl) {
+        zoneEl.style.top = `${startY - 20}px`;
+        zoneEl.style.width = `${maxX - startX + 40}px`;
+        zoneEl.style.height = `${maxY - startY + 40}px`;
+      }
+      return maxY;
+    }
+
+    const realCmdMaxY = refineDeckWithDomHeights(cmdLayout, "zone-commands");
+    const realUtilMaxY = refineDeckWithDomHeights(utilLayout, "zone-popups");
+    const realRemStartY = Math.max(realCmdMaxY, realUtilMaxY) + 100;
+    refineDeckWithDomHeights(remLayout, "zone-handlers", realRemStartY);
 
     function formatMessageText(text) {
       if (!text) return "";

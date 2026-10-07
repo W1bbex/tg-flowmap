@@ -26,9 +26,7 @@
       height: 100vh;
       display: flex;
       flex-direction: column;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-      text-rendering: geometricPrecision;
+      text-rendering: optimizeLegibility;
     }
 
     /* Top Navigation Toolbar */
@@ -161,32 +159,14 @@
       background-color: var(--bg-canvas);
       background-image: radial-gradient(var(--grid-dot) 1.5px, transparent 1.5px);
       background-size: 24px 24px;
-      will-change: transform;
     }
     #viewport.panning { cursor: grabbing; }
-    #viewport.panning #canvas-world * {
+    #viewport.panning #canvas-world {
       pointer-events: none !important;
       user-select: none !important;
     }
     #viewport.zoomed-out .edge-label-pill {
       display: none !important;
-    }
-    #viewport.zoomed-out .tg-card {
-      content-visibility: auto;
-      contain-intrinsic-size: 320px 180px;
-    }
-    #viewport.zoomed-out .tg-card-body,
-    #viewport.zoomed-out .tg-card-buttons {
-      opacity: 0.7;
-    }
-    #viewport.zoomed-out .tg-card:hover,
-    #viewport.zoomed-out .tg-card.highlighted {
-      opacity: 1 !important;
-      content-visibility: visible !important;
-    }
-    #viewport.zoomed-out .tg-card:hover .tg-card-body,
-    #viewport.zoomed-out .tg-card:hover .tg-card-buttons {
-      opacity: 1 !important;
     }
 
     #canvas-world {
@@ -195,7 +175,6 @@
       left: 0;
       transform-origin: 0 0;
       pointer-events: none;
-      will-change: transform;
     }
 
     /* SVG Layer with dynamic colored arrows */
@@ -293,7 +272,10 @@
     /* Telegram Card */
     .tg-card {
       position: absolute;
+      box-sizing: border-box;
       width: 320px;
+      max-width: 320px;
+      overflow: hidden;
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 14px;
@@ -302,9 +284,9 @@
       display: flex;
       flex-direction: column;
       user-select: text;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-      text-rendering: geometricPrecision;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+      text-rendering: optimizeLegibility;
       transition: border-color 0.15s, box-shadow 0.15s, opacity 0.15s;
     }
     /* Card Type Distinct Borders, Backgrounds and Shadows */
