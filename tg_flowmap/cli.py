@@ -207,10 +207,7 @@ def run_dast_scan(
 ) -> int:
     try:
         import asyncio
-        from tg_flowmap.dast.config import Config
-        from tg_flowmap.dast.reports import generate_reports
-        from tg_flowmap.dast.scheduler import run_crawlers
-        from tg_flowmap.dast.state import State
+        import telethon
     except ImportError as e:
         print(
             f"[ERROR] Для DAST режима требуется Telethon.\n"
@@ -219,7 +216,17 @@ def run_dast_scan(
         )
         return 1
 
-    bot_name = bot_target if bot_target.startswith("@") else f"@{bot_target}"
+    try:
+        import asyncio
+        from tg_flowmap.dast.config import Config, load_config, normalize_bot_username
+        from tg_flowmap.dast.reports import generate_reports
+        from tg_flowmap.dast.scheduler import run_scan
+        from tg_flowmap.dast.state import State
+    except Exception as e:
+        print(f"[ERROR] Ошибка инициализации DAST модулей: {e}", file=sys.stderr)
+        return 1
+
+    bot_name = normalize_bot_username(bot_target)
     cfg_file = config_path or Path("config.json")
     if not cfg_file.exists():
         print(
@@ -229,9 +236,9 @@ def run_dast_scan(
         )
         return 1
 
-    cfg = Config.load(cfg_file)
+    cfg = load_config(cfg_file)
     if output_dir:
-        cfg.output_dir = output_dir
+        cfg.root = output_dir
 
     print("=" * 60)
     print("  🤖 TG-FLOWMAP — Telegram Bot Crawler (DAST)")
@@ -240,21 +247,26 @@ def run_dast_scan(
     print(f"Директория:    {cfg.output_dir.resolve()}")
     print("-" * 60)
 
-    state = State(cfg.state_db_path)
     try:
-        statuses = asyncio.run(run_crawlers(cfg, state=state, bots=[bot_name]))
+        statuses = asyncio.run(run_scan(cfg, bots=[bot_name]))
         bot_status = statuses.get(bot_name, "ok")
         if "error" in bot_status.lower():
             print(f"[WARN] Обход завершился со статусом: {bot_status}")
+    except KeyboardInterrupt:
+        print("\n[INFO] Обход прерван пользователем. Прогресс сохранён в БД.")
     except Exception as e:
         print(f"[ERROR] Ошибка выполнения обхода: {e}", file=sys.stderr)
         return 1
 
+    state = State(cfg.db_path)
     reports = generate_reports(cfg, state, bot_name)
+    state.close()
 
-    print(f"✅ Обход завершён!")
-    print(f"📄 Отчёт сохранён: {reports.get('report')}")
-    print(f"📊 Интерактивная карта: {reports.get('map_html')}")
+    print(f"\n✅ Обход завершён!")
+    if reports.get("report"):
+        print(f"📄 Отчёт сохранён: {reports.get('report')}")
+    if reports.get("map_html"):
+        print(f"📊 Интерактивная карта: {reports.get('map_html')}")
     return 0
 
 

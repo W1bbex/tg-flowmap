@@ -26,6 +26,11 @@ class GraphAnalyzer:
         self.issues.clear()
 
         # Step 1: Resolve edges from buttons to destination nodes
+        root_keyboards = set()
+        for root_id in ("cmd:/start", "cb:menu", "cb:start", "cmd:/menu"):
+            if root_id in self.nodes and self.nodes[root_id].keyboard and getattr(self.nodes[root_id].keyboard, "name", None):
+                root_keyboards.add(self.nodes[root_id].keyboard.name)
+
         for node_id, node in self.nodes.items():
             if not node.keyboard:
                 continue
@@ -109,7 +114,13 @@ class GraphAnalyzer:
                         )
                     )
 
-            if not has_back_button and node_id not in ("cb:menu", "cmd:/start", "cb:start", "cmd:/menu"):
+            # Roadmap Stage 2: Suppress missing_back on root hubs and screens using main menu markups
+            is_root_kb = False
+            if node.keyboard and getattr(node.keyboard, "name", None):
+                kb_n = node.keyboard.name.lower()
+                is_root_kb = node.keyboard.name in root_keyboards or any(k in kb_n for k in ("main_menu", "mainmenu", "root_menu", "start_menu"))
+
+            if not has_back_button and node_id not in ("cb:menu", "cmd:/start", "cb:start", "cmd:/menu") and not is_root_kb:
                 self.issues.append(
                     Issue(
                         severity="warning",

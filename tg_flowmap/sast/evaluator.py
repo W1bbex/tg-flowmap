@@ -45,8 +45,8 @@ def evaluate_ast_node(
             if isinstance(part, ast.Constant):
                 parts.append(str(part.value))
             elif isinstance(part, ast.FormattedValue):
-                var_name = getattr(part.value, "id", None) or getattr(part.value, "attr", "*")
-                parts.append(f"{{{var_name}}}")
+                # Roadmap Stage 1: Replace dynamic f-string expressions with wildcard * for pattern matching
+                parts.append("*")
             else:
                 parts.append("*")
         return "".join(parts)
