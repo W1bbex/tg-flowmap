@@ -372,9 +372,14 @@ def build_report_md(cfg: Config, state: State, bot: str) -> str:
             "WHERE msg.bot=? AND msg.screen_id=?", (bot, sid))
         if medias:
             lines.append("")
-            lines.append("**Медиа:** " + "; ".join(
-                f"[{m['kind']}]" + (f"({m['file_path']})" if m["file_path"] else "(не скачано)")
-                for m in medias))
+            media_items = []
+            for m in medias:
+                if m["file_path"]:
+                    rel_p = f"media/{Path(m['file_path']).name}"
+                    media_items.append(f"[{m['kind']}]({rel_p})")
+                else:
+                    media_items.append(f"[{m['kind']}](не скачано)")
+            lines.append("**Медиа:** " + "; ".join(media_items))
         lines.append("")
     return "\n".join(lines)
 

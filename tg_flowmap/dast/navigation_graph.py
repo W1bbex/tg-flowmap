@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import heapq
+import itertools
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -191,12 +192,13 @@ class NavigationGraph:
         if start_screen_id not in self.nodes or target_screen_id not in self.nodes:
             return None
 
-        # Очередь с приоритетом: (total_cost, current_sid, path_edges)
-        pq: list[tuple[float, str, list[EdgeInfo]]] = [(0.0, start_screen_id, [])]
+        # Очередь с приоритетом: (total_cost, counter, current_sid, path_edges)
+        counter = itertools.count()
+        pq: list[tuple[float, int, str, list[EdgeInfo]]] = [(0.0, next(counter), start_screen_id, [])]
         visited_costs: dict[str, float] = {start_screen_id: 0.0}
 
         while pq:
-            cost, current_sid, path = heapq.heappop(pq)
+            cost, _, current_sid, path = heapq.heappop(pq)
             if current_sid == target_screen_id:
                 return path
 
@@ -216,7 +218,7 @@ class NavigationGraph:
                 next_cost = cost + step_cost
                 if next_cost < visited_costs.get(next_sid, float("inf")):
                     visited_costs[next_sid] = next_cost
-                    heapq.heappush(pq, (next_cost, next_sid, path + [edge]))
+                    heapq.heappush(pq, (next_cost, next(counter), next_sid, path + [edge]))
 
         return None
 
@@ -232,15 +234,12 @@ class NavigationGraph:
         if start_screen_id in target_screen_ids:
             return start_screen_id, [], 0.0
 
-        pq: list[tuple[float, str, list[EdgeInfo]]] = [(0.0, start_screen_id, [])]
+        counter = itertools.count()
+        pq: list[tuple[float, int, str, list[EdgeInfo]]] = [(0.0, next(counter), start_screen_id, [])]
         visited_costs: dict[str, float] = {start_screen_id: 0.0}
 
-        best_target: str | None = None
-        best_path: list[EdgeInfo] | None = None
-        best_cost = float("inf")
-
         while pq:
-            cost, current_sid, path = heapq.heappop(pq)
+            cost, _, current_sid, path = heapq.heappop(pq)
             if current_sid in target_screen_ids:
                 return current_sid, path, cost
 
@@ -259,6 +258,6 @@ class NavigationGraph:
                 next_cost = cost + step_cost
                 if next_cost < visited_costs.get(next_sid, float("inf")):
                     visited_costs[next_sid] = next_cost
-                    heapq.heappush(pq, (next_cost, next_sid, path + [edge]))
+                    heapq.heappush(pq, (next_cost, next(counter), next_sid, path + [edge]))
 
         return None

@@ -167,11 +167,13 @@ class AstParser:
                 for other_id, other_node in self.nodes.items():
                     if other_id == node_id or not other_id.startswith("cb:"):
                         continue
-                    if other_node.keyboard and other_node.keyboard.name == node.keyboard.name:
+                    other_clean = other_id.split("cb:", 1)[-1]
+                    name_matches = other_clean in (f"{cmd_clean}_menu", f"{cmd_clean}_open", cmd_clean, f"open_{cmd_clean}")
+                    kb_matches = bool(other_node.keyboard and other_node.keyboard.name == node.keyboard.name)
+                    if name_matches and kb_matches:
                         target_screen = other_node
                         break
-                    other_clean = other_id.split("cb:", 1)[-1]
-                    if other_clean in (f"{cmd_clean}_menu", f"{cmd_clean}_open", cmd_clean):
+                    if name_matches and not other_node.keyboard and not node.keyboard:
                         target_screen = other_node
                         break
 
@@ -457,7 +459,11 @@ class AstParser:
                 for elt in candidate.elts:
                     candidate_elts = [elt]
                     if isinstance(elt, ast.Name) and elt.id in local_vars:
-                        candidate_elts = [local_vars[elt.id][0]]
+                        vars_list = local_vars[elt.id]
+                        if isinstance(vars_list, list) and vars_list:
+                            candidate_elts = [vars_list[-1]]
+                        elif vars_list is not None:
+                            candidate_elts = [vars_list]
                     for c_elt in candidate_elts:
                         btn = self._parse_button_element(c_elt, local_vars)
                         if btn:
@@ -580,25 +586,28 @@ class AstParser:
 
         for case in getattr(match_node, "cases", []):
             pattern = case.pattern
-            route_val = None
-            if hasattr(ast, "MatchValue") and isinstance(pattern, ast.MatchValue):
-                val = _ast_to_value(pattern.value, {}, self.global_constants)
-                if val:
-                    route_val = str(val)
+            route_vals = []
+            patterns = pattern.patterns if hasattr(ast, "MatchOr") and isinstance(pattern, ast.MatchOr) else [pattern]
+            for p in patterns:
+                if hasattr(ast, "MatchValue") and isinstance(p, ast.MatchValue):
+                    val = _ast_to_value(p.value, {}, self.global_constants)
+                    if val:
+                        route_vals.append(str(val))
 
-            if route_val:
+            if route_vals:
                 text_template, kb_ref, inline_kb = self._find_message_dispatch(case.body, filepath)
-                self._add_node(
-                    node_id=f"cb:{route_val}",
-                    title=route_val,
-                    text_template=text_template or f"Экран {route_val}",
-                    source_file=filepath,
-                    lineno=case.pattern.lineno,
-                    trigger_type="callback",
-                    trigger_pattern=route_val,
-                    kb_ref=kb_ref,
-                    inline_kb=inline_kb,
-                )
+                for route_val in route_vals:
+                    self._add_node(
+                        node_id=f"cb:{route_val}",
+                        title=route_val,
+                        text_template=text_template or f"Экран {route_val}",
+                        source_file=filepath,
+                        lineno=getattr(case.pattern, "lineno", 0),
+                        trigger_type="callback",
+                        trigger_pattern=route_val,
+                        kb_ref=kb_ref,
+                        inline_kb=inline_kb,
+                    )
 
     def _inspect_if_route(self, if_node: ast.If, filepath: Path) -> None:
         route_keys = self._extract_route_conditions(if_node.test)

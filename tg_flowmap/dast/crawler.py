@@ -552,7 +552,9 @@ class BotCrawler:
             )
 
         self.state.mark_action_explored(self.bot, action_id)
-        self._set_position(dest_sid, exec_res.nav_msg, exec_res.nav_rowid)
+        next_msg = exec_res.nav_msg if exec_res.nav_msg is not None else self._current_msg
+        next_rowid = exec_res.nav_rowid if exec_res.nav_rowid is not None else self._current_msg_rowid
+        self._set_position(dest_sid, next_msg, next_rowid)
 
     async def _execute_local_path(self, path_edges: list[Any]) -> bool:
         """Пошаговое прохождение маршрута в графе переходов."""
@@ -581,17 +583,20 @@ class BotCrawler:
                 lambda out: self._observe_outcome_for_step(out, depth=0),
             )
 
-            if not res.success or res.actual_screen_ref is None:
+            if not res.success or (res.actual_screen_ref is None and res.reason != "answer_only"):
                 self.graph.mark_edge_unstable(edge.source_screen_id, edge.action_id)
                 self.metrics.unstable_edges += 1
                 self.state.metric_incr(self.bot, "unstable_edges", 1)
                 return False
 
             self._bump_action()
-            self._set_position(res.actual_screen_ref.screen_id, res.nav_msg, res.nav_rowid)
+            next_sid = res.actual_screen_ref.screen_id if res.actual_screen_ref else edge.destination_screen_id
+            next_msg = res.nav_msg if res.nav_msg is not None else self._current_msg
+            next_rowid = res.nav_rowid if res.nav_rowid is not None else self._current_msg_rowid
+            self._set_position(next_sid, next_msg, next_rowid)
 
             # Проверяем совпадение полученного экрана с ожидаемым
-            if res.actual_screen_ref.screen_id != edge.destination_screen_id:
+            if next_sid != edge.destination_screen_id:
                 self.graph.mark_edge_unstable(edge.source_screen_id, edge.action_id)
                 self.metrics.unstable_edges += 1
                 self.state.metric_incr(self.bot, "unstable_edges", 1)

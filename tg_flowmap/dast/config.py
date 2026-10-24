@@ -12,6 +12,8 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DANGER_WORDS = [
     "buy", "purchase", "pay", "confirm", "checkout", "deposit", "top up", "topup",
     "купить", "оплатить", "подтвердить", "пополнить", "оплата", "покупка", "оформить заказ",
+    "delete", "remove", "clear", "reset", "ban", "kick", "wipe", "destroy", "erase",
+    "стереть", "сбросить", "удалить", "забанить", "очистить", "вытереть",
 ]
 
 DEFAULT_CHECKOUT_WORDS = [

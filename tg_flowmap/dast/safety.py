@@ -157,6 +157,21 @@ class SafetyFilter:
             if pat.search(lnorm):
                 return False, f"blocked_pattern:{pat.pattern}"
 
+        # Проверка опасных действий внутри callback_data payload
+        if callback_data:
+            cb_text = ""
+            if isinstance(callback_data, (bytes, bytearray)):
+                cb_text = callback_data.decode("utf-8", errors="ignore")
+            elif isinstance(callback_data, str):
+                cb_text = callback_data
+            cbnorm = _norm(cb_text)
+            cb_danger = next((w for w in self.danger_words if w and w in cbnorm), None)
+            if cb_danger:
+                return False, f"danger_callback_word:{cb_danger}"
+            for pat in self.blocked_patterns:
+                if pat.search(cbnorm):
+                    return False, f"blocked_pattern_in_callback:{pat.pattern}"
+
         if ctx["has_price"] and ctx["has_quantity"] and not known_purpose:
             return False, "quantity_total_unknown_action"
 

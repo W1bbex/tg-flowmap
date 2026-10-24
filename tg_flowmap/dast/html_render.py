@@ -36,6 +36,13 @@ _BLOCKQUOTE_TAGS = {
 }
 
 
+def _safe_href(url: str) -> str:
+    u = (url or "").strip()
+    if u.lower().startswith(("http://", "https://", "tg://")):
+        return html.escape(u, quote=True)
+    return "#"
+
+
 def _open_tag(span: _Span, text: str) -> str:
     etype = span.etype
     if etype in _SIMPLE_TAGS:
@@ -49,10 +56,10 @@ def _open_tag(span: _Span, text: str) -> str:
         return "<pre>"
     if etype == "MessageEntityTextUrl":
         url = getattr(span.entity, "url", None) or ""
-        return f'<a href="{html.escape(url, quote=True)}">'
+        return f'<a href="{_safe_href(url)}">'
     if etype == "MessageEntityUrl":
         inner = text[span.start:span.end]
-        return f'<a href="{html.escape(inner, quote=True)}">'
+        return f'<a href="{_safe_href(inner)}">'
     if etype == "MessageEntityCustomEmoji":
         doc_id = getattr(span.entity, "document_id", None)
         if doc_id is not None:

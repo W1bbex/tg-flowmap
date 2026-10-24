@@ -258,6 +258,47 @@ def run_dast_scan(
     return 0
 
 
+def _load_target_data(target: str, out_dir: Path) -> dict:
+    p = Path(target)
+    if p.exists():
+        parser = AstParser()
+        if p.is_file():
+            parser.parse_file(p)
+        else:
+            parser.parse_dir(p)
+        analyzer = GraphAnalyzer(parser.nodes, parser.keyboards)
+        bot_map = analyzer.build_map()
+        return {
+            "metrics": BotComparator.extract_metrics_from_bot_map(bot_map),
+            "screens": [
+                {
+                    "screen_id": nid,
+                    "title": n.title,
+                    "buttons": [b.text for b in n.keyboard.all_buttons()] if n.keyboard else [],
+                }
+                for nid, n in bot_map.nodes.items()
+            ],
+        }
+    clean = target.lstrip("@")
+    cand = out_dir / clean / "graph.json"
+    if cand.exists():
+        try:
+            graph_data = json.loads(cand.read_text(encoding="utf-8"))
+            screens = graph_data.get("screens", [])
+            return {
+                "metrics": {
+                    "screens_count": len(screens),
+                    "buttons_count": len(graph_data.get("routes", [])),
+                    "dead_ends": 0,
+                    "missing_back": 0,
+                },
+                "screens": [{"screen_id": s.get("screen_id"), "title": s.get("screen_id"), "buttons": []} for s in screens],
+            }
+        except Exception:
+            pass
+    return {"metrics": {"screens_count": 0, "buttons_count": 0, "dead_ends": 0, "missing_back": 0}, "screens": []}
+
+
 def run_compare(
     target_a: str,
     target_b: str,
@@ -273,80 +314,11 @@ def run_compare(
     print(f"Бот B (Конкурент):  {target_b}")
     print("-" * 60)
 
-    data_a: dict = {}
-    data_b: dict = {}
+    data_a = _load_target_data(target_a, out_dir)
+    data_b = _load_target_data(target_b, out_dir)
 
-    # Target A
     path_a = Path(target_a)
-    if path_a.exists():
-        parser = AstParser()
-        if path_a.is_file():
-            parser.parse_file(path_a)
-        else:
-            parser.parse_dir(path_a)
-        analyzer = GraphAnalyzer(parser.nodes, parser.keyboards)
-        bot_map_a = analyzer.build_map()
-        data_a = {
-            "metrics": BotComparator.extract_metrics_from_bot_map(bot_map_a),
-            "screens": [
-                {
-                    "screen_id": nid,
-                    "title": n.title,
-                    "buttons": [b.text for b in n.keyboard.all_buttons()] if n.keyboard else [],
-                }
-                for nid, n in bot_map_a.nodes.items()
-            ],
-        }
-    else:
-        data_a = {"metrics": {"screens_count": 0, "buttons_count": 0, "dead_ends": 0, "missing_back": 0}}
-
-    # Target B
     path_b = Path(target_b)
-    if path_b.exists():
-        parser = AstParser()
-        if path_b.is_file():
-            parser.parse_file(path_b)
-        else:
-            parser.parse_dir(path_b)
-        analyzer = GraphAnalyzer(parser.nodes, parser.keyboards)
-        bot_map_b = analyzer.build_map()
-        data_b = {
-            "metrics": BotComparator.extract_metrics_from_bot_map(bot_map_b),
-            "screens": [
-                {
-                    "screen_id": nid,
-                    "title": n.title,
-                    "buttons": [b.text for b in n.keyboard.all_buttons()] if n.keyboard else [],
-                }
-                for nid, n in bot_map_b.nodes.items()
-            ],
-        }
-    else:
-        # Check DAST cached reports or summary
-        b_clean = target_b.lstrip("@")
-        json_cand = out_dir / b_clean / "graph.json"
-        if json_cand.exists():
-            try:
-                graph_data = json.loads(json_cand.read_text(encoding="utf-8"))
-                screens = graph_data.get("screens", [])
-                data_b = {
-                    "metrics": {
-                        "screens_count": len(screens),
-                        "buttons_count": len(graph_data.get("routes", [])),
-                        "dead_ends": 0,
-                        "missing_back": 0,
-                    },
-                    "screens": [{"screen_id": s.get("screen_id"), "title": s.get("screen_id"), "buttons": []} for s in screens],
-                }
-            except Exception:
-                data_b = {"metrics": {"screens_count": 1, "buttons_count": 1, "dead_ends": 0, "missing_back": 0}}
-        else:
-            print(f"[WARN] Данные для бота '{target_b}' не найдены в локальном кэше.")
-            print(f"       Чтобы провести реальный обход, запустите: tg-flowmap dast {target_b}")
-            data_b = {
-                "metrics": {"screens_count": 0, "buttons_count": 0, "dead_ends": 0, "missing_back": 0},
-                "screens": [],
-            }
 
     comparator = BotComparator(
         bot_a_name=path_a.name if path_a.exists() else target_a,
@@ -375,6 +347,7 @@ def main() -> None:
         prog="tg-flowmap",
         description="Unified Telegram Bot Analyzer: Static AST (SAST) + Dynamic Userbot Crawler (DAST) + LLM Benchmarker",
     )
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.0.0")
     subparsers = parser.add_subparsers(dest="subcommand", help="Доступные режимы анализа")
 
     # SAST command
@@ -400,7 +373,10 @@ def main() -> None:
     # Fast-path backward compatibility:
     # If user called `tg-flowmap path/to/bot` directly without subcommand:
     args_list = sys.argv[1:]
-    if args_list and args_list[0] not in ("sast", "code", "scan", "dast", "crawl", "bot", "compare", "diff", "bench", "-h", "--help"):
+    if args_list and args_list[0] not in (
+        "sast", "code", "scan", "dast", "crawl", "bot", "compare", "diff", "bench",
+        "-h", "--help", "-v", "--version"
+    ):
         # Auto-route to sast mode!
         args_list = ["sast"] + args_list
 

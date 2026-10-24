@@ -279,8 +279,9 @@ class State:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
-        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False,
-                                     timeout=10.0)
+        self._conn = sqlite3.connect(
+            str(self.db_path), check_same_thread=False, timeout=10.0, isolation_level=None
+        )
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")

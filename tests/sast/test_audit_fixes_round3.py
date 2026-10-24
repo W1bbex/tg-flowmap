@@ -63,6 +63,7 @@ def test_state_exec_rollback_on_error(tmp_path: Path):
 
     info = state.bot_info("@another_bot")
     assert info is not None
+    state.close()
 
 
 def test_navigation_executor_answer_only():

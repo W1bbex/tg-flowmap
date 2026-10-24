@@ -739,7 +739,8 @@ const ICON_SYMBOLS = {
       // Restore cached Telegram premium emojis with verified data URIs
       if (rawData.custom_emojis) {
         res = res.replace(/__TG_EMOJI_(\d+)__/g, (match, id) => {
-          return `<img class="tg-premium-emoji" src="${rawData.custom_emojis[id]}" alt="emoji" />`;
+          const safeSrc = escapeHtml(rawData.custom_emojis[id] || "");
+          return `<img class="tg-premium-emoji" src="${safeSrc}" alt="emoji" />`;
         });
       }
       return res;
