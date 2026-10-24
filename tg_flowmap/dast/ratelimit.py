@@ -67,5 +67,10 @@ class FloodGate:
 
     def _check_release(self, deadline: float) -> None:
         # отпускаем только если это актуальный дедлайн (не отменён более длинным)
-        if deadline >= self._deadline - 1e-9 and time.monotonic() >= deadline - 0.1:
-            self._event.set()
+        if deadline >= self._deadline - 1e-9:
+            now = time.monotonic()
+            if now >= deadline - 0.1:
+                self._event.set()
+            else:
+                remaining = max(0.01, self._deadline - now)
+                asyncio.get_running_loop().call_later(remaining + 0.01, self._check_release, self._deadline)

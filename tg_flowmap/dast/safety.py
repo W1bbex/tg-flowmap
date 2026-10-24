@@ -13,9 +13,9 @@ from .config import Config
 
 WALLET_REGEXES = [
     re.compile(r"0x[0-9a-fA-F]{40}"),
-    re.compile(r"\bT[1-9A-HJ-NP-Za-km-z]{33}\b"),        # TRON / USDT TRC20
-    re.compile(r"\bbc1[a-z0-9]{20,60}\b"),               # Bitcoin bech32
-    re.compile(r"\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b"),  # Bitcoin legacy
+    re.compile(r"\bT[1-9A-HJ-NP-Za-km-z]{33}\b", re.IGNORECASE),        # TRON / USDT TRC20
+    re.compile(r"\bbc1[a-z0-9]{20,60}\b", re.IGNORECASE),               # Bitcoin bech32
+    re.compile(r"\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b", re.IGNORECASE),  # Bitcoin legacy
 ]
 PAYMENT_INSTRUCTION_WORDS = [
     "переведите", "перевод на", "send the exact amount", "scan the qr", "отсканируй",
@@ -70,12 +70,13 @@ class SafetyFilter:
 
     # ------------------------------------------------------------------ экран
     def screen_context(self, screen_text: str) -> dict:
-        t = _norm(screen_text or "")
+        raw_text = screen_text or ""
+        t = _norm(raw_text)
         return {
             "is_checkout": any(w in t for w in self.checkout_words),
-            "has_wallet": any(rx.search(t) for rx in WALLET_REGEXES),
+            "has_wallet": any(rx.search(raw_text) or rx.search(t) for rx in WALLET_REGEXES),
             "has_payment_instruction": any(w in t for w in self.payment_instruction_words),
-            "has_price": bool(self.price_re.search(t)),
+            "has_price": bool(self.price_re.search(raw_text) or self.price_re.search(t)),
             "has_quantity": any(w in t for w in self.quantity_words),
             "password_required": any(w in t for w in self.password_words),
         }
@@ -202,6 +203,14 @@ class SafetyFilter:
         а все доступные кнопки — только Cancel/Back (бот ждёт текст,
         предлагая лишь отмену).
         """
+        labels = [_norm(l) for l in (pressable_labels or []) if _norm(l)]
+        exit_like = self.back_words + self.cancel_words
+        has_nav_buttons = any(not any(w and w in l for w in exit_like) for l in labels)
+
+        # Если на экране есть реальные навигационные кнопки выбора — это не блокирующий ввод текста
+        if has_nav_buttons and not has_force_reply:
+            return False
+
         if self.requires_input_hint(text, has_force_reply):
             return True
         t = _norm(text or "")
@@ -210,10 +219,8 @@ class SafetyFilter:
         promptish = any(w in t for w in (self.input_prompt_words))
         if not promptish:
             return False
-        labels = [_norm(l) for l in (pressable_labels or []) if _norm(l)]
         if not labels:
             return True  # запрос ввода без кнопок
-        exit_like = self.back_words + self.cancel_words
         return all(any(w and w in l for w in exit_like) for l in labels)
 
     # -------------------------------------------------------- manual answers

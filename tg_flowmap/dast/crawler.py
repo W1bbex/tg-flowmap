@@ -157,6 +157,7 @@ class BotCrawler:
 
     def _bump_action(self) -> int:
         """Считает КАЖДОЕ Telegram-действие в общем бюджете."""
+        self._consecutive_errors = 0
         n = self.state.progress_incr(self.bot, "actions")
         self.metrics.telegram_actions += 1
         self.state.metric_incr(self.bot, "telegram_actions", 1)

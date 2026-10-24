@@ -809,7 +809,18 @@ class AstParser:
                     func_name = getattr(subnode.func, "attr", None) or getattr(subnode.func, "id", "")
                     func_low = func_name.lower()
                     if any(k in func_low for k in ("send_message", "edit_message", "edit_text", "edit_caption", "send_photo", "sendphoto", "answer", "send_player_card")):
-                        is_toast = ("answer" in func_low or "callbackquery" in func_low) and not any(k in func_low for k in ("message", "edit", "caption", "send", "photo"))
+                        caller_id = ""
+                        if isinstance(subnode.func, ast.Attribute) and isinstance(subnode.func.value, ast.Name):
+                            caller_id = subnode.func.value.id.lower()
+                        has_markup = any(kw.arg == "reply_markup" for kw in subnode.keywords)
+                        has_alert = any(kw.arg in ("show_alert", "cache_time") for kw in subnode.keywords)
+
+                        if "callback" in func_low or "callbackquery" in func_low or has_alert:
+                            is_toast = True
+                        elif func_low == "answer":
+                            is_toast = caller_id in ("call", "callback", "callback_query", "query", "cb") and not has_markup
+                        else:
+                            is_toast = False
                         for arg in subnode.args:
                             val = _ast_to_value(arg, local_body_vars, self.global_constants)
                             if isinstance(val, str) and len(val) > 2 and not val.startswith("$"):

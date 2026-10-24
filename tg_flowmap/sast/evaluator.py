@@ -133,6 +133,27 @@ def evaluate_ast_node(
     if isinstance(node, ast.Set):
         return set(evaluate_ast_node(elt, local_vars, global_vars, depth + 1, max_depth) for elt in node.elts)
 
+    if isinstance(node, ast.Subscript):
+        val = evaluate_ast_node(node.value, local_vars, global_vars, depth + 1, max_depth)
+        slice_node = node.slice
+        if hasattr(ast, "Index") and isinstance(slice_node, ast.Index):
+            slice_node = slice_node.value
+        key = evaluate_ast_node(slice_node, local_vars, global_vars, depth + 1, max_depth)
+
+        if isinstance(val, dict):
+            if key in val:
+                return val[key]
+            if str(key) in val:
+                return val[str(key)]
+        elif isinstance(val, (list, tuple)) and isinstance(key, int):
+            try:
+                return val[key]
+            except IndexError:
+                return None
+        elif isinstance(val, str) and val.startswith("$"):
+            return f"{val}[{key}]"
+        return None
+
     return None
 
 

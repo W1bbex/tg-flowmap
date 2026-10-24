@@ -19,7 +19,7 @@ DEFAULT_CHECKOUT_WORDS = [
     "подтверждение заказа", "confirm order", "реквизиты", "пополнение баланса", "счёт на оплату",
 ]
 
-DEFAULT_PRICE_REGEX = r"([$€£₽]\s?\d|\d+([.,]\d+)?\s?(USD|EUR|RUB|руб|₽|\$|uah|тенге))"
+DEFAULT_PRICE_REGEX = r"(?i)([$€£₽]\s?\d|\d+([.,]\d+)?\s?(USD|EUR|RUB|руб|₽|\$|uah|тенге))"
 
 DEFAULT_BACK_WORDS = ["back", "назад", "⬅", "◀", "←"]
 
@@ -31,7 +31,7 @@ DEFAULT_VOLATILE_PATTERNS = [
     r"(?i)кол-во\s*[:—-]?\s*\d+",
     r"#\d+",
     r"[$€£₽]\s?\d+([.,]\d+)?",
-    r"\d+([.,]\d+)?\s?(USD|RUB|руб|₽|\$)",
+    r"(?i)\d+([.,]\d+)?\s?(USD|RUB|руб|₽|\$)",
 ]
 
 # Слова навигации: кнопка с таким текстом считается "известного назначения"
@@ -168,9 +168,9 @@ class Config:
 
 def _compile_pat(p: str) -> re.Pattern:
     try:
-        return re.compile(p)
+        return re.compile(p, re.IGNORECASE)
     except re.error:
-        return re.compile(re.escape(p))
+        return re.compile(re.escape(p), re.IGNORECASE)
 
 
 def _clean_bots(bots) -> list[str]:

@@ -4,6 +4,20 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
+def _format_screen_buttons(raw_buttons: Any) -> str:
+    if not raw_buttons or not isinstance(raw_buttons, (list, tuple)):
+        return "нет кнопок"
+    formatted = []
+    for b in raw_buttons:
+        if isinstance(b, str):
+            formatted.append(b)
+        elif isinstance(b, dict):
+            formatted.append(str(b.get("label") or b.get("text") or "кнопка"))
+        else:
+            formatted.append(str(getattr(b, "label", getattr(b, "text", "кнопка"))))
+    return ", ".join(formatted) or "нет кнопок"
+
+
 def generate_llm_benchmark_prompt(
     bot_a_name: str,
     bot_a_metrics: Dict[str, Any],
@@ -52,7 +66,7 @@ def generate_llm_benchmark_prompt(
         lines.append("```text")
         for s in bot_a_screens[:30]:
             name = s.get("title") or s.get("screen_id") or "screen"
-            btns = ", ".join(s.get("buttons", [])) or "нет кнопок"
+            btns = _format_screen_buttons(s.get("buttons"))
             lines.append(f"- [{name}]: кнопки -> [{btns}]")
         if len(bot_a_screens) > 30:
             lines.append(f"... и ещё {len(bot_a_screens) - 30} экранов")
@@ -64,7 +78,7 @@ def generate_llm_benchmark_prompt(
         lines.append("```text")
         for s in bot_b_screens[:30]:
             name = s.get("title") or s.get("screen_id") or "screen"
-            btns = ", ".join(s.get("buttons", [])) or "нет кнопок"
+            btns = _format_screen_buttons(s.get("buttons"))
             lines.append(f"- [{name}]: кнопки -> [{btns}]")
         if len(bot_b_screens) > 30:
             lines.append(f"... и ещё {len(bot_b_screens) - 30} экранов")

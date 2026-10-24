@@ -97,11 +97,9 @@ class Navigator:
 
     # ------------------------------------------------------------- конвейер
     async def _through_limiters(self) -> None:
-        """Порядок важен: per-bot задержка → общий лимитер аккаунта →
-        FloodGate ПОСЛЕДНИМ, непосредственно перед Telegram-запросом.
-        Между wait_open() и самим запросом нет await — задача, прошедшая
-        гейт до чужого FloodWait, не успеет отправить запрос во время
-        активной глобальной паузы."""
+        """Порядок: сначала ждём снятия FloodWait (FloodGate), затем per-bot задержку
+        и захват токена глобального лимитера, после чего финально убеждаемся, что гейт открыт."""
+        await self.flood_gate.wait_open()
         await self.per_bot.wait()
         await self.global_limiter.acquire()
         await self.flood_gate.wait_open()
@@ -215,7 +213,7 @@ class Navigator:
                     if cb is not None:
                         cb.duration_ms = duration_ms
                     await self.logger.finish_action(action_id, self.bot, "error", duration_ms=duration_ms, error=err)
-                    return PressOutcome(kind="error", action_id=action_id, error=err, cb=cb)
+                    return PressOutcome(kind="error", action_id=action_id, error=err, callback=cb)
             elif button.button_type == "reply" and self.cfg.press_reply_keyboard:
                 await self.client.send_message(self.chat, button.label)
             else:

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -341,8 +342,9 @@ def build_report_md(cfg: Config, state: State, bot: str) -> str:
                 status = "OK" if not b["blocked_reason"] else \
                     f"BLOCKED: {b['blocked_reason']}"
                 hexv = (b["callback_hex"] or "")[:24]
+                safe_label = str(b["label"] or "").replace("|", "\\|").replace("\n", " ")
                 lines.append(
-                    f"| {b['row']} | {b['col']} | {b['label']} | {b['button_type']} "
+                    f"| {b['row']} | {b['col']} | {safe_label} | {b['button_type']} "
                     f"| `{hexv}` | {_style_str(b) or '—'} | {status} |")
         outs = [t for t in transitions if t["from_screen"] == sid]
         if outs:
@@ -423,7 +425,8 @@ def write_previews(cfg: Config, state: State, bot: str, bot_dir: Path) -> None:
 
 
 def generate_reports(cfg: Config, state: State, bot: str) -> dict[str, Path]:
-    bot_dir = cfg.output_dir / bot.lstrip("@")
+    safe_bot = re.sub(r"[^a-zA-Z0-9_-]", "_", bot.lstrip("@")) or "bot"
+    bot_dir = cfg.output_dir / safe_bot
     bot_dir.mkdir(parents=True, exist_ok=True)
 
     graph = build_graph(state, bot)

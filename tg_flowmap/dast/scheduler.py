@@ -30,7 +30,9 @@ logger = logging.getLogger(__name__)
 
 
 def bot_output_dir(cfg: Config, bot: str):
-    return cfg.output_dir / bot.lstrip("@")
+    import re
+    safe_bot = re.sub(r"[^a-zA-Z0-9_-]", "_", bot.lstrip("@")) or "bot"
+    return cfg.output_dir / safe_bot
 
 
 def _feed_incoming(router: EventRouter, kind: str, message) -> None:
@@ -88,7 +90,7 @@ async def _progress_monitor(state: State, bots: list[str], interval: float) -> N
                 f"| frontier: {frontier_n} | starts: {starts_n} | errors: {errors_n}"
             )
         if lines:
-            print(" | ".join(lines))
+            logger.info(" | ".join(lines))
 
 
 async def run_scan(cfg: Config, bots: list[str], resume: bool = False) -> dict[str, str]:
@@ -132,7 +134,6 @@ async def run_scan(cfg: Config, bots: list[str], resume: bool = False) -> dict[s
     )
 
     try:
-        tasks: list[asyncio.Task] = []
         scheduled_bots: list[str] = []
         statuses: dict[str, str] = {}
         for username in bots:
@@ -198,9 +199,13 @@ async def run_scan(cfg: Config, bots: list[str], resume: bool = False) -> dict[s
         progress_task.cancel()
         for crawler in crawlers.values():
             crawler.stop()
-        for task in tasks:
-            if not task.done():
-                task.cancel()
+        pending_tasks = [t for t in tasks if not t.done()]
+        if not progress_task.done():
+            pending_tasks.append(progress_task)
+        for task in pending_tasks:
+            task.cancel()
+        if pending_tasks:
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
         for (h,) in handlers:
             try:
                 client.remove_event_handler(h)

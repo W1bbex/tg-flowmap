@@ -188,6 +188,18 @@ def stable_action_id(
     return "act_" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
+def _extract_field(obj: Any, key: str, default: Any = None) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    try:
+        val = obj[key]
+        return val if val is not None else default
+    except (TypeError, KeyError, IndexError):
+        pass
+    val = getattr(obj, key, default)
+    return val if val is not None else default
+
+
 def match_button_instance(
     action: dict | Any,
     instances: list[dict | Any],
@@ -203,20 +215,20 @@ def match_button_instance(
     if not instances:
         return None, 0.0, "no_instances_available"
 
-    a_row = int(getattr(action, "row", 0) if not isinstance(action, dict) else action.get("row", 0))
-    a_col = int(getattr(action, "col", 0) if not isinstance(action, dict) else action.get("col", 0))
-    a_label = normalize_text(str(getattr(action, "label", "") if not isinstance(action, dict) else action.get("label", "")))
-    a_type = str(getattr(action, "button_type", "") if not isinstance(action, dict) else action.get("button_type", ""))
-    a_icon = str(getattr(action, "style_icon_id", "") or "" if not isinstance(action, dict) else action.get("style_icon_id", "") or "")
+    a_row = int(_extract_field(action, "row", 0))
+    a_col = int(_extract_field(action, "col", 0))
+    a_label = normalize_text(str(_extract_field(action, "label", "")))
+    a_type = str(_extract_field(action, "button_type", ""))
+    a_icon = str(_extract_field(action, "style_icon_id", "") or "")
 
     # 1. Попытка точного позиционного совпадения
     exact_matches = []
     for inst in instances:
-        i_row = int(getattr(inst, "row", 0) if not isinstance(inst, dict) else inst.get("row", 0))
-        i_col = int(getattr(inst, "col", 0) if not isinstance(inst, dict) else inst.get("col", 0))
-        i_label = normalize_text(str(getattr(inst, "label", "") if not isinstance(inst, dict) else inst.get("label", "")))
-        i_type = str(getattr(inst, "button_type", "") if not isinstance(inst, dict) else inst.get("button_type", ""))
-        i_icon = str(getattr(inst, "style_icon_id", "") or "" if not isinstance(inst, dict) else inst.get("style_icon_id", "") or "")
+        i_row = int(_extract_field(inst, "row", 0))
+        i_col = int(_extract_field(inst, "col", 0))
+        i_label = normalize_text(str(_extract_field(inst, "label", "")))
+        i_type = str(_extract_field(inst, "button_type", ""))
+        i_icon = str(_extract_field(inst, "style_icon_id", "") or "")
 
         if i_row == a_row and i_col == a_col and i_label == a_label and i_type == a_type:
             exact_matches.append(inst)
@@ -227,9 +239,9 @@ def match_button_instance(
     # 2. Попытка структурного совпадения по тексту и типу (если позиция сместилась)
     label_matches = []
     for inst in instances:
-        i_label = normalize_text(str(getattr(inst, "label", "") if not isinstance(inst, dict) else inst.get("label", "")))
-        i_type = str(getattr(inst, "button_type", "") if not isinstance(inst, dict) else inst.get("button_type", ""))
-        i_icon = str(getattr(inst, "style_icon_id", "") or "" if not isinstance(inst, dict) else inst.get("style_icon_id", "") or "")
+        i_label = normalize_text(str(_extract_field(inst, "label", "")))
+        i_type = str(_extract_field(inst, "button_type", ""))
+        i_icon = str(_extract_field(inst, "style_icon_id", "") or "")
 
         if i_label == a_label and i_type == a_type:
             if not a_icon or a_icon == i_icon:

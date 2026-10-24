@@ -310,9 +310,13 @@ class State:
     # ------------------------------------------------------------ примитивы
     def _exec(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         with self._lock:
-            cur = self._conn.execute(sql, params)
-            self._conn.commit()
-            return cur
+            try:
+                cur = self._conn.execute(sql, params)
+                self._conn.commit()
+                return cur
+            except BaseException:
+                self._conn.rollback()
+                raise
 
     def _query(self, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
         with self._lock:

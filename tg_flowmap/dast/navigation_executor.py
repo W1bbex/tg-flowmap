@@ -74,6 +74,15 @@ class NavigationExecutor:
         # 5. Обработка входящих сообщений через observe_callback
         nav_msg, nav_ref, nav_rowid = await observe_callback(outcome)
         if nav_ref is None:
+            if getattr(outcome, "kind", "") == "answer_only":
+                return StepExecutionResult(
+                    success=True,
+                    outcome=outcome,
+                    actual_screen_ref=None,
+                    nav_msg=None,
+                    nav_rowid=None,
+                    reason="answer_only",
+                )
             return StepExecutionResult(
                 success=False,
                 outcome=outcome,

@@ -94,6 +94,23 @@ class BotComparator:
     def build_comparison_markdown(self) -> str:
         metrics_a, metrics_b = self._resolve_metrics()
 
+        def _leader(val_a: Any, val_b: Any, lower_is_better: bool = False) -> str:
+            try:
+                v_a = float(val_a)
+                v_b = float(val_b)
+                if v_a == v_b:
+                    return "Ничья"
+                if lower_is_better:
+                    return self.bot_a_name if v_a < v_b else self.bot_b_name
+                return self.bot_a_name if v_a > v_b else self.bot_b_name
+            except (ValueError, TypeError):
+                return "Ничья" if val_a == val_b else self.bot_a_name
+
+        s_a, s_b = metrics_a.get('screens_count', 0), metrics_b.get('screens_count', 0)
+        b_a, b_b = metrics_a.get('buttons_count', 0), metrics_b.get('buttons_count', 0)
+        d_a, d_b = metrics_a.get('dead_ends', 0), metrics_b.get('dead_ends', 0)
+        m_a, m_b = metrics_a.get('missing_back', 0), metrics_b.get('missing_back', 0)
+
         lines = [
             "# ⚔️ Telegram Bot Benchmark & Comparison",
             "",
@@ -106,14 +123,10 @@ class BotComparator:
             "",
             f"| Метрика интерфейса | {self.bot_a_name} | {self.bot_b_name} | Лидер |",
             "|---|---|---|---|",
-            f"| Всего экранов в структуре | {metrics_a.get('screens_count', 0)} | {metrics_b.get('screens_count', 0)} | "
-            f"{self.bot_a_name if metrics_a.get('screens_count', 0) >= metrics_b.get('screens_count', 0) else self.bot_b_name} |",
-            f"| Всего интерактивных действий | {metrics_a.get('buttons_count', 0)} | {metrics_b.get('buttons_count', 0)} | "
-            f"{self.bot_a_name if metrics_a.get('buttons_count', 0) >= metrics_b.get('buttons_count', 0) else self.bot_b_name} |",
-            f"| Тупиковые экраны (Dead-ends) | {metrics_a.get('dead_ends', 0)} | {metrics_b.get('dead_ends', 0)} | "
-            f"{self.bot_a_name if metrics_a.get('dead_ends', 0) <= metrics_b.get('dead_ends', 0) else self.bot_b_name} (меньше = лучше) |",
-            f"| Экраны без кнопки возврата | {metrics_a.get('missing_back', 0)} | {metrics_b.get('missing_back', 0)} | "
-            f"{self.bot_a_name if metrics_a.get('missing_back', 0) <= metrics_b.get('missing_back', 0) else self.bot_b_name} |",
+            f"| Всего экранов в структуре | {s_a} | {s_b} | {_leader(s_a, s_b)} |",
+            f"| Всего интерактивных действий | {b_a} | {b_b} | {_leader(b_a, b_b)} |",
+            f"| Тупиковые экраны (Dead-ends) | {d_a} | {d_b} | {_leader(d_a, d_b, lower_is_better=True)} (меньше = лучше) |",
+            f"| Экраны без кнопки возврата | {m_a} | {m_b} | {_leader(m_a, m_b, lower_is_better=True)} |",
             "",
             "---",
             "",
