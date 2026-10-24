@@ -30,8 +30,6 @@ Combines Zero-runtime AST Static Analysis (SAST), State-Aware Userbot Crawling (
 - [x] 182 passing automated tests across SAST and DAST suites.
 - [x] SAST v2: Wildcard-трансформация f-строк (`f"prefix:{var}"` ➔ `prefix:*`) для устранения ложных `[DANGLING_HANDLER]`.
 - [x] SAST v2: Подавление `[MISSING_BACK]` при возврате в корневой хаб (`main_menu_markup`).
-- [ ] SAST v2: Двухпроходный резолвинг параметризованных карточек (`card_markup(data)`) и вызовов из брокеров/диспетчеров.
-- [ ] Детальный разбор ограничений: см. `LIMITATIONS_AND_ROADMAP.md`.
 
 ## 5. Known Traps & Rendering Gotchas (Не наступать на грабли!)
 1. **Dynamic GPU Promotion (Устранение лагов без мыла шрифтов)**:
@@ -46,5 +44,5 @@ Combines Zero-runtime AST Static Analysis (SAST), State-Aware Userbot Crawling (
    - В `viewer.js` запрещено делать `body.innerHTML = node.text_template` без санитизации: экранировать через `escapeHtml()` перед вставкой в DOM.
 6. **DAST Safety & FloodGate**:
    - Краулер никогда не должен нажимать опасные кнопки ("Купить", "Оплатить", "Списать") — они отсекаются в `safety.py`. Рейт-лимитер должен строго уважать задержки Telegram и перехватывать `FloodWait`.
-7. **SAST в асинхронных IoT-ботах (Слепые зоны парсера)**:
-   - Статический AST не видит `send_message`, если отправка происходит асинхронно через брокер (`mqtt_dispatcher.py`). F-строки в `callback_data` без wildcard-нормализации порождают ложные `[DANGLING_HANDLER]`. Не считать такие предупреждения реальными багами в боте до ручной проверки.
+7. **Границы статического SAST анализа**:
+   - Статический AST анализирует код Telegram-интерфейса и клавиатур. Если отправка сообщений разорвана через внешние очереди задач или сторонние сервисы, такие экраны связываются по общим префиксам кнопок, а динамический обход делегируется DAST-режиму.
