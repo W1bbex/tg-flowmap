@@ -1,0 +1,11 @@
+{
+  "api_id": 0,
+  "api_hash": "YOUR_TELEGRAM_API_HASH",
+  "session_name": "market_research",
+  "bots": [],
+  "language": "ru",
+  "delay_min": 2.0,
+  "delay_max": 5.0,
+  "max_depth": 8,
+  "max_actions_per_bot": 300
+}

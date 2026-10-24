@@ -17,6 +17,13 @@ dependencies = []
 dast = [
     "telethon>=1.36,<2",
 ]
+cli = [
+    "rich>=13.0",
+    "questionary>=2.0",
+]
+full = [
+    "tg-flowmap[dast,cli]",
+]
 dev = [
     "pytest>=8.0",
 ]
