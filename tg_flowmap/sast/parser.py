@@ -871,6 +871,8 @@ class AstParser:
                                                     if rows:
                                                         b_type = builder_types.get(b_name, "inline")
                                                         inline_kb = Keyboard(name=f"inline_{lineno}", rows=rows, keyboard_type=b_type, source_file=str(filepath), line_number=lineno)
+                                            if c_func in self.keyboards or any(k.endswith(f".{c_func}") for k in self.keyboards):
+                                                kb_name = c_func
                                             elif any(k in c_func.lower() for k in ("markup", "keyboard")):
                                                 inline_kb = self._parse_keyboard_expr(
                                                     node_val,

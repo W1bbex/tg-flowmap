@@ -48,3 +48,29 @@ def test_root_hub_missing_back_suppression_roadmap_stage2():
         if i.issue_type == "missing_back" and i.node_id == "cmd:/exit"
     ]
     assert len(exit_missing_back) == 0
+
+
+def test_project_wide_keyboard_matching_resolves_modular_handlers():
+    # Keyboard created in an unattached module or class (not directly bound to a handler)
+    btn_unlock = Button(text="Запуск сетапа", callback_data="flow_unlock_and_workspace")
+    modular_kb = Keyboard(rows=[[btn_unlock]], name="launch_card_markup")
+
+    # Handler waiting in a router file
+    nodes = {
+        "cb:flow_unlock_and_workspace": MessageNode(
+            id="cb:flow_unlock_and_workspace",
+            title="flow_unlock_and_workspace",
+        ),
+    }
+
+    # Pass keyboards containing modular_kb
+    analyzer = GraphAnalyzer(nodes, {"launch_card_markup": modular_kb})
+    bot_map = analyzer.build_map()
+
+    # The handler must NOT be marked as dangling because its button exists in project keyboards!
+    dangling = [
+        i for i in bot_map.issues
+        if i.issue_type == "dangling_handler" and i.node_id == "cb:flow_unlock_and_workspace"
+    ]
+    assert len(dangling) == 0
+

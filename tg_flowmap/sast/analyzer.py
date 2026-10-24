@@ -149,12 +149,25 @@ class GraphAnalyzer:
 
         # Step 2: Check for dangling handlers (nodes that are never called)
         called_targets = {e.to_node_id for e in self.edges}
+
+        # Project-Wide Keyboard Matching:
+        # Collect all callback_data defined across ALL keyboards discovered in the project
+        all_project_callbacks: Set[str] = set()
+        for kb in self.keyboards.values():
+            for btn in kb.all_buttons():
+                if btn.callback_data:
+                    all_project_callbacks.add(str(btn.callback_data))
+
         for node_id, node in self.nodes.items():
             if (
                 node_id not in called_targets
                 and node_id not in ("cb:menu", "cmd:/start", "cb:start", "cmd:/menu")
                 and not node_id.startswith("cmd:")
             ):
+                # Suppress dangling_handler if a button for this callback exists in project keyboards
+                if self._is_callback_in_project_keyboards(node_id, all_project_callbacks):
+                    continue
+
                 self.issues.append(
                     Issue(
                         severity="info",
@@ -320,3 +333,25 @@ class GraphAnalyzer:
 
         # Dead end
         return f"unresolved:{cb}", "dead_end"
+
+    def _is_callback_in_project_keyboards(self, node_id: str, all_project_callbacks: Set[str]) -> bool:
+        """Checks if a callback node matches any button defined across project keyboards."""
+        if not node_id.startswith("cb:"):
+            return False
+        cb = node_id[3:]  # strip "cb:"
+        clean_cb = cb.rstrip("*")
+
+        for pcb in all_project_callbacks:
+            if pcb == cb:
+                return True
+            if clean_cb and (pcb.startswith(clean_cb) or clean_cb.startswith(pcb.rstrip("*"))):
+                return True
+            if pcb.endswith("*") and cb.startswith(pcb[:-1]):
+                return True
+            # Prefix-based matching across colon and underscore
+            for sep in (":", "_"):
+                if sep in pcb and sep in cb:
+                    if pcb.split(sep, 1)[0] == cb.split(sep, 1)[0]:
+                        return True
+        return False
+
