@@ -85,8 +85,21 @@ class GraphAnalyzer:
                     continue
 
                 cb = btn.callback_data
+                cb_low = cb.lower()
                 btn_text = btn.text or ""
-                is_back = (any(k in btn_text.lower() for k in ("назад", "back", "«", "‹", "↩")) if btn_text else False) or cb in ("menu", "main")
+                is_back = (
+                    (
+                        any(
+                            k in btn_text.lower()
+                            for k in ("назад", "back", "«", "‹", "↩", "отмена", "cancel", "закрыть", "close", "выход", "меню")
+                        )
+                        if btn_text
+                        else False
+                    )
+                    or cb_low in ("menu", "main")
+                    or any(cb_low.endswith(s) for s in ("_close", "_cancel", "_back", "_exit", "_no"))
+                    or "cancel" in cb_low
+                )
                 if is_back and node_id not in ("cb:menu", "cmd:/start", "cb:start"):
                     has_back_button = True
 
@@ -103,13 +116,18 @@ class GraphAnalyzer:
                 )
 
                 if status == "dead_end":
+                    btn_source = (
+                        node.keyboard.source_file
+                        if (btn.line_number and node.keyboard and getattr(node.keyboard, "source_file", None))
+                        else node.source_file
+                    )
                     self.issues.append(
                         Issue(
                             severity="error",
                             issue_type="dead_end",
                             message=f"Кнопка '{btn.text}' ведёт на коллбек '{cb}', для которого нет обработчика в коде!",
                             node_id=node_id,
-                            source_file=node.source_file,
+                            source_file=btn_source,
                             line_number=btn.line_number or node.line_number,
                         )
                     )
@@ -180,6 +198,24 @@ class GraphAnalyzer:
                 )
 
         # Step 3: Check for duplicate screens & redundant flows (O(N) grouping)
+        spa_action_tokens = (
+            "_toggle",
+            "_add",
+            "_back",
+            "_clear",
+            "_reset",
+            "_save",
+            "_cancel",
+            "_close",
+            "_delete",
+            "_remove",
+            "_on",
+            "_off",
+            "_set",
+            "_switch",
+            "_refresh",
+            "_retry",
+        )
         kb_groups: Dict[str, List[MessageNode]] = defaultdict(list)
         for n in self.nodes.values():
             if not n.keyboard or not n.keyboard.rows or not n.keyboard.name:
@@ -188,6 +224,13 @@ class GraphAnalyzer:
             kb_name_lower = n.keyboard.name.lower()
             is_generic_back = any(k in kb_name_lower for k in ("back", "cancel", "close", "nav", "назад", "отмена"))
             if is_generic_back and total_btns <= 1:
+                continue
+            n_id_low = n.id.lower()
+            if n_id_low.startswith("cb:") and (
+                n_id_low.endswith("*") or any(tok in n_id_low for tok in spa_action_tokens)
+            ):
+                continue
+            if n_id_low.startswith("cmd:/exit"):
                 continue
             kb_groups[n.keyboard.name].append(n)
 
@@ -222,6 +265,11 @@ class GraphAnalyzer:
 
     def _inspect_button_lint(self, btn: Button, node: MessageNode) -> None:
         """Checks for Telegram API constraints and bugs."""
+        btn_source = (
+            node.keyboard.source_file
+            if (btn.line_number and node.keyboard and getattr(node.keyboard, "source_file", None))
+            else node.source_file
+        )
         # 1. Null/invalid icon_custom_emoji_id
         if btn.icon_custom_emoji_id is not None:
             val = str(btn.icon_custom_emoji_id).strip()
@@ -236,7 +284,7 @@ class GraphAnalyzer:
                             f"(невалидное числовое значение). Telegram API вернёт 400 Bad Request!"
                         ),
                         node_id=node.id,
-                        source_file=node.source_file,
+                        source_file=btn_source,
                         line_number=btn.line_number or node.line_number,
                     )
                 )
@@ -259,7 +307,7 @@ class GraphAnalyzer:
                     issue_type="invalid_button",
                     message=f"Кнопка '{btn.text}' не имеет ни callback_data, ни url, ни web_app. Telegram отклонит такую кнопку!",
                     node_id=node.id,
-                    source_file=node.source_file,
+                    source_file=btn_source,
                     line_number=btn.line_number or node.line_number,
                 )
             )
@@ -276,7 +324,7 @@ class GraphAnalyzer:
                         f"({len(cb_str.encode('utf-8'))} байт). Telegram API вернёт 400 BUTTON_DATA_INVALID!"
                     ),
                     node_id=node.id,
-                    source_file=node.source_file,
+                    source_file=btn_source,
                     line_number=btn.line_number or node.line_number,
                 )
             )

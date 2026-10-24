@@ -45,11 +45,39 @@ def evaluate_ast_node(
             if isinstance(part, ast.Constant):
                 parts.append(str(part.value))
             elif isinstance(part, ast.FormattedValue):
-                # Roadmap Stage 1: Replace dynamic f-string expressions with wildcard * for pattern matching
-                parts.append("*")
+                val = evaluate_ast_node(part.value, local_vars, global_vars, depth + 1, max_depth)
+                if val is not None and str(val) != "" and not str(val).startswith("$"):
+                    parts.append(str(val))
+                else:
+                    parts.append("*")
             else:
                 parts.append("*")
         return "".join(parts)
+
+    if isinstance(node, ast.IfExp):
+        body_val = evaluate_ast_node(node.body, local_vars, global_vars, depth + 1, max_depth)
+        orelse_val = evaluate_ast_node(node.orelse, local_vars, global_vars, depth + 1, max_depth)
+        if body_val is not None and not str(body_val).startswith("$"):
+            return body_val
+        if orelse_val is not None and not str(orelse_val).startswith("$"):
+            return orelse_val
+        return body_val if body_val is not None else orelse_val
+
+    if isinstance(node, ast.BoolOp):
+        if isinstance(node.op, ast.Or):
+            for val_node in node.values:
+                v = evaluate_ast_node(val_node, local_vars, global_vars, depth + 1, max_depth)
+                if v is not None and v != "" and not str(v).startswith("$"):
+                    return v
+            return None
+        if isinstance(node.op, ast.And):
+            last_v = None
+            for val_node in node.values:
+                v = evaluate_ast_node(val_node, local_vars, global_vars, depth + 1, max_depth)
+                if v is None or v == "" or str(v).startswith("$"):
+                    return None
+                last_v = v
+            return last_v
 
     if isinstance(node, ast.Name):
         if local_vars and node.id in local_vars:
