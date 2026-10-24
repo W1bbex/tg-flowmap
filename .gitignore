@@ -8,6 +8,8 @@ build/
 dist/
 *.egg-info/
 .env
+*.session
+*.session-journal
 *.db
 *.sqlite3
 .venv/
@@ -17,6 +19,7 @@ venv/
 .coverage
 htmlcov/
 .pytest_cache/
+.pytest_temp/
 output/
 .cache/
 

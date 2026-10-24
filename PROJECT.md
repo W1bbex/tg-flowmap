@@ -1,40 +1,44 @@
 # tg-flowmap
 
 ## 1. Overview & Architecture
-Zero-runtime AST static analyzer, linter, and interactive flow-map visualizer for Telegram Bots.
-Extracts message templates, inline keyboards, callbacks, and state transitions without launching the bot, producing an n8n-style interactive canvas with dead-end and broken API audits.
+Unified Telegram Bot Analysis, Reverse-Engineering, and Benchmarking Suite.
+Combines Zero-runtime AST Static Analysis (SAST), State-Aware Userbot Crawling (DAST via Telethon), and LLM-ready Product Benchmarking (Claude / ChatGPT) into a single cohesive toolkit.
 
 ## 2. Tech Stack
-- Core Engine: Python 3.10+ (Standard Library: `ast`, `re`, `json`, `pathlib`, `typing`)
-- Visualization: Standalone HTML5 / Vis.js Canvas (ForceAtlas2 physics, node inspector side panel)
-- CLI: Lightweight entrypoint for analyzing project directories or files (`tg_flowmap.cli`)
-- Tests: `pytest` with regression coverage in `tests/test_flowmap.py`
+- SAST Engine: Python 3.10+ (Standard Library: `ast`, `re`, `json`, `pathlib`, `typing`) — 0 runtime dependencies.
+- DAST Engine: Telethon, SQLite3 state persistence (15 tables), Dijkstra locality navigation, Safety Filter.
+- Core / Benchmarker: Unified `BotMap` data models, `comparator.py`, `llm_exporter.py`.
+- Visualization: Standalone HTML5 / SVG / Vis.js Canvas (ForceAtlas2 physics, DirectWrite ClearType, zero-deck collision).
+- CLI: Zero-flag frictionless entrypoint (`tg-flowmap sast`, `tg-flowmap dast`, `tg-flowmap compare`).
+- Tests: `pytest` with 182 passing regression and performance tests in `tests/sast` and `tests/dast`.
 
 ## 3. Key Design Rationale
-- Pure AST analysis: No live execution, no database required, zero secret/token requirements.
-- Standard Telegram Bot API schema as canonical source of truth for keyboards and callbacks.
-- Resilient pattern recognition: handles custom dicts (`inline_keyboard`), standard aiogram/telebot button builders, match-case, and if-else / decorator router dispatching.
-- Auto-resolution of module constants and `resources/icons.json` to prevent false positives while strictly flagging real broken/missing custom emojis.
+- Pure AST analysis for local code (SAST): 0 dependencies, 50ms execution, safe for untrusted code and CI/CD.
+- Graph-First Locality Navigation for external bots (DAST): Dijkstra shortest path over known transitions prevents spamming `/start` and protects against Telegram FloodWait bans.
+- Zero-flag sensible defaults: running commands prints rich summaries and automatically saves structured Markdown and JSON into `output/` without requiring tedious `-o` flags.
+- Prompt-ready LLM export: automatic generation of `llm_prompt.md` containing side-by-side metrics and structured screen maps for instant AI UX/CRO auditing.
 
 ## 4. Active Tasks & Gotchas
 - [x] Initial repository setup and passport creation in `C:\Projects\.github\tg-flowmap`.
-- [x] Core AST parser: keyboard extractor, callback router extractor, message caller extractor.
-- [x] Graph builder and linter (detects dead ends, null emoji IDs, orphan buttons, callback length limits).
-- [x] Standalone interactive HTML exporter with pan/zoom/search and node inspector.
-- [x] Full test suite (7 passing tests including performance & memory budgets) and dogfood verification on `pc-control/vds_bot`.
-- [x] 4-type visual taxonomy (Commands, Screens, Callbacks, Popups) with live filter bar.
-- [x] Multi-deck canvas layout (Commands, Popups, Secondary Handlers) and straight-vertical tree branches.
-- [x] Dynamic GPU canvas acceleration, DirectWrite ClearType font sharpness, and zero deck collision cascading.
+- [x] Core AST parser, keyboard extractor, and dead-end linter (SAST).
+- [x] Standalone interactive HTML visualizer with GPU acceleration and ClearType font rendering.
+- [x] Security & Parser audit fixes: Stored DOM XSS eliminated, /start hijacking prevented, ast.BoolOp & ast.Attribute support.
+- [x] Multi-deck canvas layout and collision-free two-pass height refinement (`refineDeckWithDomHeights`).
+- [x] Integration of DAST engine from `TgBotExplorer` into `tg_flowmap/dast/`.
+- [x] Unified `core/` models, `BotComparator`, and `llm_exporter` for instant comparison of Bot A vs Bot B.
+- [x] Frictionless zero-flag CLI supporting `sast`, `dast`, `compare` with automatic Markdown and LLM prompt exports.
+- [x] 182 passing automated tests across SAST and DAST suites.
 
 ## 5. Known Traps & Rendering Gotchas (Не наступать на грабли!)
 1. **Dynamic GPU Promotion (Устранение лагов без мыла шрифтов)**:
-   - *Грабли 1 (Мыло)*: Постоянный `will-change: transform` на `#canvas-world` или `#viewport` превращает холст в фиксированную GPU-текстуру — при зуме шрифты мылятся, а ховер даёт резкость ровно на 1 кадр из-за инвалидации слоя.
-   - *Грабли 2 (Лаги)*: Полное удаление GPU-слоя заставляет браузер программно перерисовывать все 70+ карточек с тенями и SVG на CPU при каждом `mousemove` (просадка до 10–15 FPS).
-   - *Золотое правило*: Включать аппаратное ускорение `translate3d(rx, ry, 0) scale(scale)` и `willChange = "transform"` **строго во время движения** (`mousedown`, `wheel`, `smoothFlyTo`). В покое (`mouseup`, debounce `wheel` 100мс) сбрасывать `willChange = ""` и переходить на 2D `translate` с целыми пикселями `Math.round()` — шрифты рендерятся с кристальным субпиксельным DirectWrite ClearType.
+   - Включать аппаратное ускорение `translate3d(rx, ry, 0) scale(scale)` и `willChange = "transform"` строго во время движения (`mousedown`, `wheel`, `smoothFlyTo`). В покое сбрасывать `willChange = ""` и переходить на 2D `translate` с целыми пикселями `Math.round()` — шрифты рендерятся с кристальным субпиксельным DirectWrite ClearType.
 2. **Селекторы драга O(1) вместо O(N)**:
-   - Не использовать `#viewport.panning #canvas-world *` (перебивает дерево всех элементов DOM). Использовать `#viewport.panning #canvas-world` — отключает события у контейнера без пересчёта стилей сотен потомков.
+   - Не использовать `#viewport.panning #canvas-world *`. Использовать `#viewport.panning #canvas-world` — отключает события у контейнера без пересчёта стилей сотен потомков.
 3. **Шрифты на Windows**:
    - Запрещено вешать `-webkit-font-smoothing: antialiased`, `grayscale` и `text-rendering: geometricPrecision` — они отключают хинтинг и субпиксельный рендеринг DirectWrite на Windows.
 4. **Каскадирование колод в DOM (`refineDeckWithDomHeights`)**:
-   - Запрещено хардкодить `startY` для последующих колод (например, `remStartY = 620px` приводило к наезду `led` на `player`).
    - Всегда использовать двухпроходный каскад: замерять реальные DOM-высоты колоды в Pass 2 и сдвигать следующую колоду по фактическому максимуму: `realRemStartY = Math.max(realCmdMaxY, realUtilMaxY) + 100`.
+5. **Экранирование HTML в шаблонах карточек (XSS Guard)**:
+   - В `viewer.js` запрещено делать `body.innerHTML = node.text_template` без санитизации: экранировать через `escapeHtml()` перед вставкой в DOM.
+6. **DAST Safety & FloodGate**:
+   - Краулер никогда не должен нажимать опасные кнопки ("Купить", "Оплатить", "Списать") — они отсекаются в `safety.py`. Рейт-лимитер должен строго уважать задержки Telegram и перехватывать `FloodWait`.

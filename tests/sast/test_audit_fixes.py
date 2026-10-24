@@ -311,3 +311,272 @@ async def start_cmd(message):
     finally:
         p.unlink(missing_ok=True)
 
+
+def test_start_command_not_hijacked_by_startswith():
+    code = '''
+@dp.message(F.text.startswith("start_query:"))
+async def on_search(message):
+    await message.answer("Результаты поиска")
+
+@dp.message(Command("start"))
+async def real_start(message):
+    await message.answer("Главное меню")
+'''
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(code)
+        p = Path(f.name)
+
+    try:
+        parser = AstParser()
+        parser.parse_file(p)
+        assert "cmd:/start" in parser.nodes
+        start_node = parser.nodes["cmd:/start"]
+        assert start_node.text_template == "Главное меню"
+    finally:
+        p.unlink(missing_ok=True)
+
+
+def test_bool_op_or_route_conditions():
+    code = '''
+async def handle_callback(call):
+    if call.data == "first_route" or call.data == "second_route":
+        await call.message.edit_text("Экран маршрутов")
+'''
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(code)
+        p = Path(f.name)
+
+    try:
+        parser = AstParser()
+        parser.parse_file(p)
+        assert "cb:first_route" in parser.nodes
+        node = parser.nodes["cb:first_route"]
+        assert "second_route" in node.aliases
+
+        # Verify that GraphAnalyzer resolves both first_route and second_route to this screen
+        analyzer = GraphAnalyzer(parser.nodes, {})
+        target1, status1 = analyzer._resolve_target("first_route")
+        target2, status2 = analyzer._resolve_target("second_route")
+        assert target1 == "cb:first_route" and status1 == "ok"
+        assert target2 == "cb:first_route" and status2 == "ok"
+    finally:
+        p.unlink(missing_ok=True)
+
+
+def test_reply_markup_attribute_resolution():
+    code = '''
+class Keyboards:
+    MAIN_MENU = {"inline_keyboard": [[{"text": "Кнопка", "callback_data": "act"}]]}
+
+@dp.message(Command("menu"))
+async def show_menu(message):
+    await message.answer("Меню", reply_markup=Keyboards.MAIN_MENU)
+'''
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(code)
+        p = Path(f.name)
+
+    try:
+        parser = AstParser()
+        parser.parse_file(p)
+        assert "cmd:/menu" in parser.nodes
+        menu_node = parser.nodes["cmd:/menu"]
+        assert menu_node.keyboard is not None
+        assert menu_node.keyboard.name in ("MAIN_MENU", "Keyboards.MAIN_MENU")
+    finally:
+        p.unlink(missing_ok=True)
+
+
+def test_button_none_text_no_crash():
+    nodes = {
+        "cb:menu": MessageNode(
+            id="cb:menu",
+            title="Menu",
+            keyboard=Keyboard(
+                name="menu_kb",
+                rows=[[Button(text=None, callback_data="test_action")]],
+            ),
+        ),
+        "cb:test_action": MessageNode(id="cb:test_action", title="Action"),
+    }
+    analyzer = GraphAnalyzer(nodes, {})
+    # Must not raise AttributeError: 'NoneType' object has no attribute 'lower'
+    bot_map = analyzer.build_map()
+    assert len(bot_map.edges) == 1
+
+
+def test_webapp_button_no_invalid_button_error():
+    nodes = {
+        "cb:menu": MessageNode(
+            id="cb:menu",
+            title="Menu",
+            keyboard=Keyboard(
+                name="menu_kb",
+                rows=[[Button(text="Open Mini App", web_app="https://webapp.telegram.org")]],
+            ),
+        ),
+    }
+    analyzer = GraphAnalyzer(nodes, {})
+    bot_map = analyzer.build_map()
+    invalid_issues = [i for i in bot_map.issues if i.issue_type == "invalid_button"]
+    assert len(invalid_issues) == 0
+
+
+def test_screen_consolidation_runs_without_cb_menu():
+    code = '''
+def settings_kb():
+    return {"inline_keyboard": [[{"text": "Опция", "callback_data": "opt"}]]}
+
+@dp.message(Command("settings"))
+async def cmd_settings(message):
+    await message.answer("Настройки", reply_markup=settings_kb())
+
+@dp.callback_query(F.data == "settings_menu")
+async def cb_settings(call):
+    await call.message.edit_text("Настройки", reply_markup=settings_kb())
+'''
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(code)
+        p = Path(f.name)
+
+    try:
+        parser = AstParser()
+        parser.parse_file(p)
+        # Note: cb:menu is NOT present in this file
+        # Pass A must still consolidate cmd:/settings into cb:settings_menu
+        assert "cb:settings_menu" in parser.nodes
+        settings_node = parser.nodes["cb:settings_menu"]
+        assert "/settings" in settings_node.aliases
+        assert "cmd:/settings" not in parser.nodes
+    finally:
+        p.unlink(missing_ok=True)
+
+
+def test_parser_state_leak_prevented():
+    file1_code = '''
+@dp.message(Command("alpha"))
+async def cmd_alpha(message):
+    await message.answer("Alpha")
+'''
+    file2_code = '''
+@dp.message(Command("beta"))
+async def cmd_beta(message):
+    await message.answer("Beta")
+'''
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f1, \
+         tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f2:
+        f1.write(file1_code)
+        f2.write(file2_code)
+        p1 = Path(f1.name)
+        p2 = Path(f2.name)
+
+    try:
+        parser = AstParser()
+        parser.parse_file(p1)
+        assert "cmd:/alpha" in parser.nodes
+        assert "cmd:/beta" not in parser.nodes
+
+        parser.parse_file(p2)
+        assert "cmd:/beta" in parser.nodes
+        assert "cmd:/alpha" not in parser.nodes  # Must be reset, no leakage
+    finally:
+        p1.unlink(missing_ok=True)
+        p2.unlink(missing_ok=True)
+
+
+def test_toast_answer_does_not_override_screen_text():
+    code = '''
+@dp.callback_query(F.data == "order_confirm")
+async def on_order_confirm(call):
+    await call.answer("Уведомление: заказ оформлен!")
+    await call.message.edit_text("Основной экран заказа", reply_markup=None)
+'''
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(code)
+        p = Path(f.name)
+
+    try:
+        parser = AstParser()
+        parser.parse_file(p)
+        assert "cb:order_confirm" in parser.nodes
+        node = parser.nodes["cb:order_confirm"]
+        assert node.text_template == "Основной экран заказа"
+    finally:
+        p.unlink(missing_ok=True)
+
+
+def test_xss_payload_escaped_in_html_output():
+    from tg_flowmap.models import BotMap
+    from tg_flowmap.visualizer import HtmlVisualizer
+
+    nodes = {
+        "cmd:/xss": MessageNode(
+            id="cmd:/xss",
+            title="<script>alert(1)</script>",
+            text_template='<img src=x onerror=alert("XSS")>',
+        )
+    }
+    bot_map = BotMap(nodes=nodes, edges=[], issues=[], stats={})
+    with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as f:
+        p = Path(f.name)
+    try:
+        viz = HtmlVisualizer(bot_map)
+        viz.render(p)
+        content = p.read_text(encoding="utf-8")
+        # Ensure raw unescaped script tag is not present
+        assert "<script>alert(1)</script>" not in content
+        assert "formatMessageText" in content
+        assert "escapeHtml" in content
+    finally:
+        p.unlink(missing_ok=True)
+
+
+def test_if_router_command_detection_variations():
+    code = '''
+async def message_router(message):
+    text = message.text
+    if message.text == "/help":
+        await message.answer("Помощь по боту")
+    elif text.lower() == "/start":
+        await message.answer("Добро пожаловать")
+    elif message.text.strip() == "otvet":
+        await message.answer("Ответ на вопрос")
+    elif "/settings" == msg.text:
+        await message.answer("Настройки бота")
+    elif message.text in ("/menu", "меню"):
+        await message.answer("Главное меню")
+    elif text.startswith("/calc"):
+        await message.answer("Калькулятор")
+'''
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(code)
+        p = Path(f.name)
+
+    try:
+        parser = AstParser()
+        parser.parse_file(p)
+
+        assert "cmd:/help" in parser.nodes
+        assert parser.nodes["cmd:/help"].node_type == "command"
+        assert parser.nodes["cmd:/help"].text_template == "Помощь по боту"
+
+        assert "cmd:/start" in parser.nodes
+        assert parser.nodes["cmd:/start"].node_type == "command"
+
+        assert "cmd:/otvet" in parser.nodes
+        assert parser.nodes["cmd:/otvet"].node_type == "command"
+        assert "otvet" in parser.nodes["cmd:/otvet"].aliases
+
+        assert "cmd:/settings" in parser.nodes
+        assert parser.nodes["cmd:/settings"].node_type == "command"
+
+        assert "cmd:/menu" in parser.nodes
+        assert "меню" in parser.nodes["cmd:/menu"].aliases
+
+        assert "cmd:/calc" in parser.nodes
+        assert parser.nodes["cmd:/calc"].node_type == "command"
+    finally:
+        p.unlink(missing_ok=True)
+
+
+

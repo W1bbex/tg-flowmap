@@ -98,10 +98,10 @@ def resolve_user_input_path(raw_text: str, candidates: list[Path]) -> Path | Non
             return cand
 
     # 3. Fuzzy substring matching across known candidates
-    clean_low = clean.lower().replace("/", "\\")
+    clean_low = clean.lower().replace("\\", "/")
     matches = [
         c for c in candidates 
-        if clean_low in str(c).lower() or clean_low in c.name.lower()
+        if clean_low in c.as_posix().lower() or clean_low in c.name.lower()
     ]
     if len(matches) == 1:
         print(f"✔ Автоматически определён проект: {matches[0]}")
@@ -177,7 +177,7 @@ def interactive_mode(initial_target: Path | None = None) -> None:
                 break
             print(f"[ERROR] Указанный путь не существует: {clean_input}")
 
-    bot_name = target_path.name
+    bot_name = target_path.stem
     output_dir = SCRIPT_DIR / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_html = output_dir / f"{bot_name}_flowmap.html"
@@ -217,7 +217,7 @@ def interactive_mode(initial_target: Path | None = None) -> None:
     print(f"🚀 Запуск анализа для: {target_path.resolve()}")
     exit_code = run_analysis(target_path, output_html=output_html, bot_token=bot_token, parser=parser_probe)
 
-    if exit_code == 0 or output_html.exists():
+    if exit_code == 0 and output_html.exists():
         print()
         print(f"🌐 Открываем интерактивную карту в браузере: {output_html.resolve()}")
         try:

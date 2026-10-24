@@ -1,103 +1,117 @@
 # 🧭 tg-flowmap
 
-> **Zero-runtime static AST analyzer, linter, and interactive flow-map visualizer for Telegram Bots.**
+> **Unified Telegram Bot Analysis & Benchmarking Suite: Static Code AST (SAST) + Dynamic Userbot Crawler (DAST) + AI UX Benchmarking.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-brightgreen.svg)]()
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)]()
+[![Tests: 182 passed](https://img.shields.io/badge/tests-182%20passed-brightgreen.svg)]()
 
-`tg-flowmap` analyzes your Telegram bot's source code **without running it**, without installing heavy dependencies, and without requiring database connections or bot tokens. It parses Python AST to construct an interactive, node-graph visualization of all screens, inline keyboards, callbacks, and state transitions, while automatically linting for common Telegram Bot API defects and dead-ends.
-
----
-
-## ✨ Features
-
-- 🗺️ **Interactive Canvas (n8n/Miro style)**: Pan, zoom, drag nodes, and explore every message screen, keyboard layout, and button route.
-- 🔍 **Dead-End Detection**: Automatically catches buttons whose `callback_data` has no corresponding handler in the code.
-- ⚡ **Zero-Execution Static AST**: Safely analyze bots without executing untrusted code, importing libraries, or connecting to Telegram servers.
-- 🚨 **Telegram API Validation**:
-  - Catches invalid/null `icon_custom_emoji_id` values before they trigger `400 Bad Request` in production.
-  - Flags buttons with missing action (no `callback_data` and no `url`).
-  - Warns about `callback_data` strings exceeding the Telegram 64-byte limit.
-- ↩️ **UX Audit (Missing Back Buttons)**: Identifies dead-end screens where users have no option to return to previous or main menus.
-- 📦 **Framework Agnostic**: Works seamlessly with raw Telegram Bot API dicts, `aiogram` (v2 & v3), `telebot` (pyTelegramBotAPI), and custom bot frameworks.
-- 📑 **Export Options**: Generates standalone single-file HTML reports (with Vis.js) and structured JSON for CI/CD pipelines.
+`tg-flowmap` — комплексный инженерный инструмент для аудита, визуализации и сравнения Telegram-ботов:
+1. **SAST (Static AST)**: сканирует исходный код вашего бота **без запуска**, находит тупики, битые коллбеки и нарушения спецификации Telegram Bot API за 50 мс без единой зависимости.
+2. **DAST (Telethon Crawler)**: аккуратно обходит интерфейс **чужого бота-конкурента** юзерботом по графу Дейкстры (без лишних `/start` и с защитой от бана).
+3. **AI UX Benchmarker**: сопоставляет вашего бота с ботом оппонента и формирует готовый промпт для ChatGPT / Claude (*«Сравни моего бота с конкурентом и дай 5 жестких UX-советов по воронке продаж»*).
 
 ---
 
-## 🚀 Quick Start
+## ⚡ Быстрый старт (Zero-Boilerplate)
 
-### 1. Installation
+Никаких сложных флагов. Все отчёты и данные автоматически сохраняются в `output/`.
 
-Clone and install in virtual environment:
-
-```bash
-git clone https://github.com/w1bbex/tg-flowmap.git
-cd tg-flowmap
-python -m venv .venv
-.\.venv\Scripts\activate  # On Linux/macOS: source .venv/bin/activate
-pip install -e .
-```
-
-### 2. Run Analysis
-
-Analyze a bot file or an entire project directory:
+### 1. Установка
 
 ```bash
-python -m tg_flowmap path/to/bot -o flowmap.html
+# Базовый легковесный режим (SAST, 0 зависимостей):
+pip install tg-flowmap
+
+# Полный фарш (с Telethon для обхода конкурентов):
+pip install "tg-flowmap[dast]"
 ```
 
-Or run directly if installed as package:
+### 2. Анализ своего бота (SAST)
 
 ```bash
-tg-flowmap path/to/bot/bot.py -o flowmap.html --json report.json
+tg-flowmap sast path/to/my_bot
 ```
+> Выводит аудит в консоль и автоматически сохраняет Markdown-отчёт: `output/my_bot_report.md`.  
+> *Хотите интерактивный холст? Просто добавьте флаг `--html`.*
 
-### 3. CI/CD Strict Mode
-
-Fail your build if dead-ends or broken emojis are detected:
+### 3. Исследование чужого бота (DAST)
 
 ```bash
-tg-flowmap path/to/bot --strict
+tg-flowmap dast @competitor_bot
 ```
+> Обходит интерфейс конкурента, сохраняет структуру меню, карточки и отчёт в `output/@competitor_bot/`.
+
+### 4. Ультимативное сравнение с конкурентом (AI Benchmark)
+
+```bash
+tg-flowmap compare path/to/my_bot @competitor_bot
+```
+> Генерирует сравнительную матрицу `output/comparison.md` и готовый к отправке в ИИ файл **`output/llm_prompt.md`**!
 
 ---
 
-## 📊 Sample Output
+## 📊 Пример терминального вывода (SAST)
 
 ```text
 ============================================================
-  🧭 TG-FLOWMAP — Telegram Bot Visualizer & Linter
+  🧭 TG-FLOWMAP — Telegram Bot Analyzer (SAST)
 ============================================================
-Цель:            C:\Projects\pc-control\vds_bot
-Всего экранов:   91
-Всего связей:    302
-Клавиатур найдено: 26
-Тупиков (Dead-end): 0
-Ошибок эмодзи:   0
-Без кнопки Назад: 28
+Цель:              C:\Projects\my_shop_bot
+Всего экранов:     54
+Всего связей:      35
+Клавиатур найдено: 31
+Тупиков (Dead-end):0
+Ошибок эмодзи:     0
+Без кнопки Назад:  2
 ------------------------------------------------------------
 
 🔍 НАЙДЕННЫЕ ДЕФЕКТЫ И ПРЕДУПРЕЖДЕНИЯ:
-  1. ⚠️ [MISSING_BACK] В экране 'power_menu' нет кнопки возврата (« Назад / В меню »).
-  2. ℹ️ [DANGLING_HANDLER] Обработчик 'console_close' определён в коде, но ни одна кнопка на него не ссылается.
+  1. ⚠️ [MISSING_BACK] В экране 'catalog:filter' нет кнопки возврата (« Назад / В меню »).
+  2. ℹ️ [DANGLING_HANDLER] Обработчик 'admin_dump' определён в коде, но ни одна кнопка на него не ссылается.
 
-📊 Интерактивная карта сохранена: output/pc_control_flowmap.html
-📄 JSON-отчёт сохранён: output/pc_control_flowmap.json
+📄 Отчёт сохранён: output/my_shop_bot_report.md
+📦 JSON-структура сохранена: output/my_shop_bot_data.json
 ```
 
 ---
 
-## 🛠️ Architecture
+## 🤖 Пример сгенерированного AI-промпта (`llm_prompt.md`)
 
-- `tg_flowmap/models.py`: Data models (`Button`, `Keyboard`, `MessageNode`, `Edge`, `Issue`, `BotMap`).
-- `tg_flowmap/parser.py`: Pure Python AST parser extracting inline keyboards, variable assignments, callback routes, startswith prefixes, match-case statements, and decorators.
-- `tg_flowmap/analyzer.py`: Resolves edges, wildcard prefixes (`volume:*`, `player_*`), inspects button constraints, and detects dead-ends.
-- `tg_flowmap/visualizer.py`: Generates standalone interactive HTML visualizer with ForceAtlas2 physics layout, search filter, and node detail side-panel.
-- `tg_flowmap/cli.py`: Command-line interface and terminal reporter.
+```markdown
+# Telegram Bot UX Benchmark: my_bot vs @competitor_bot
+
+| Метрика | my_bot (Мой бот) | @competitor_bot (Конкурент) |
+|---|---|---|
+| Всего экранов | 14 | 32 |
+| Всего кнопок | 28 | 64 |
+| Тупиковые кнопки | 0 | 0 |
+| Экраны без кнопки «Назад» | 0 | 2 |
+
+[Структура экранов и кнопок обоих ботов...]
+
+### Запрос для нейросети:
+"Ты — ведущий UX/CPO архитектор Telegram-ботов. На основе структуры выше проведи
+глубокий аудит: где мой бот проигрывает конкуренту по скорости оформления заказа
+и какие 5 конкретных правок меню поднимут конверсию?"
+```
 
 ---
 
-## 📄 License
+## 🛠️ Архитектура модулей
 
-MIT License. Built by w1bbex.
+- `tg_flowmap/core/`: единая модель графа (`BotMap`), движок сравнения (`comparator.py`) и генератор промптов (`llm_exporter.py`).
+- `tg_flowmap/sast/`: статический двухпроходный AST-парсер, вычисление выражений без `eval()`, линтер Bot API.
+- `tg_flowmap/dast/`: Telethon-краулер, навигация по Дейкстре, фильтр безопасности `safety.py`, SQLite state.
+- `tg_flowmap/visualizer/`: компилятор автономных HTML5/SVG интерактивных карт (ForceAtlas2, ClearType DirectWrite).
+- `tg_flowmap/cli.py`: единый CLI-интерфейс с поддержкой команд `sast`, `dast`, `compare`.
+
+---
+
+## 🧪 Тестирование
+
+```bash
+pytest tests -v
+```
+**182 passing tests** (36 SAST + 146 DAST) с полным контролем бюджета памяти и производительности.

@@ -708,15 +708,38 @@ const ICON_SYMBOLS = {
     const realRemStartY = Math.max(realCmdMaxY, realUtilMaxY) + 100;
     refineDeckWithDomHeights(remLayout, "zone-handlers", realRemStartY);
 
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
     function formatMessageText(text) {
       if (!text) return "";
-      let res = text;
+      let res = String(text);
+      // Temporarily stash Telegram premium emojis
       if (rawData.custom_emojis) {
         res = res.replace(/<tg-emoji[^>]*emoji-id=['"](\d+)['"][^>]*>.*?<\/tg-emoji>/gi, (match, id) => {
           if (rawData.custom_emojis[id]) {
-            return `<img class="tg-premium-emoji" src="${rawData.custom_emojis[id]}" alt="emoji" />`;
+            return `__TG_EMOJI_${id}__`;
           }
           return match;
+        });
+      }
+      // Escape raw HTML entities to eliminate Stored DOM XSS
+      res = escapeHtml(res);
+      // Whitelist safe Telegram markdown/HTML formatting tags
+      res = res
+        .replace(/&lt;(\/)?(b|i|code|pre|s|u|tg-spoiler)&gt;/gi, '<$1$2>')
+        .replace(/&lt;a\s+href=(&quot;|&#039;)(https?:\/\/[^&]+)\1&gt;(.*?)&lt;\/a&gt;/gi, '<a href="$2" target="_blank" rel="noopener">$3</a>');
+      // Restore cached Telegram premium emojis with verified data URIs
+      if (rawData.custom_emojis) {
+        res = res.replace(/__TG_EMOJI_(\d+)__/g, (match, id) => {
+          return `<img class="tg-premium-emoji" src="${rawData.custom_emojis[id]}" alt="emoji" />`;
         });
       }
       return res;
@@ -775,7 +798,8 @@ const ICON_SYMBOLS = {
       if (node.aliases && node.aliases.length > 0) {
         for (const alias of node.aliases) {
           if (alias.startsWith("/") || alias.startsWith("cmd:/")) {
-            const cleanCmd = alias.startsWith("cmd:/") ? alias.slice(4) : alias;
+            const rawClean = alias.startsWith("cmd:/") ? alias.slice(4) : alias;
+            const cleanCmd = escapeHtml(rawClean);
             badgeHtml += ` <span class="badge-type badge-type-command" title="Альтернативная команда вызова: ${cleanCmd}">⚡ ${cleanCmd}</span>`;
           }
         }
@@ -801,7 +825,7 @@ const ICON_SYMBOLS = {
       if (isStartHub) {
         const body = document.createElement("div");
         body.className = "tg-card-body";
-        body.innerHTML = node.text_template || "<i>(Точка входа)</i>";
+        body.innerHTML = formatMessageText(node.text_template || "<i>(Точка входа)</i>");
         card.appendChild(body);
 
         const badge = document.createElement("div");
@@ -833,7 +857,8 @@ const ICON_SYMBOLS = {
       } else if (nodeType === "command") {
         const body = document.createElement("div");
         body.className = "tg-card-body";
-        const cmdName = nodeId.startsWith("cmd:/") ? nodeId.slice(5) : nodeId.slice(4);
+        const rawCmd = nodeId.startsWith("cmd:/") ? nodeId.slice(5) : nodeId.slice(4);
+        const cmdName = escapeHtml(rawCmd);
         body.innerHTML = `
           <div class="command-box">
             <div class="command-box-prompt"><code>/${cmdName}</code></div>
@@ -844,7 +869,7 @@ const ICON_SYMBOLS = {
       } else if (nodeType === "callback" && (!node.keyboard || !node.keyboard.rows || !node.keyboard.rows.length)) {
         const body = document.createElement("div");
         body.className = "tg-card-body";
-        const cbName = nodeId.replace(/^cb:/, '');
+        const cbName = escapeHtml(nodeId.replace(/^cb:/, ''));
         body.innerHTML = `
           <div class="callback-action-box">
             <div class="callback-action-header">🔘 Действие: <code>${cbName}</code></div>
@@ -1305,7 +1330,7 @@ const ICON_SYMBOLS = {
       removeTempTargetArrow();
       const edge = rawData.edges.find(e => 
         e.from_node_id === fromId && 
-        (e.button_text === btnText || (btnText && btnText.includes(e.button_text)))
+        (e.button_text === btnText || (btnText && e.button_text && btnText.includes(e.button_text)))
       );
       if (!edge || !edge.to_node_id) return;
       const fromPos = nodePositions.get(edge.from_node_id);
@@ -1417,8 +1442,16 @@ const ICON_SYMBOLS = {
       for (const p of renderedEdgePaths) {
         let match = false;
         if (p.dataset.from === fromId) {
-          if (p.dataset.btn === btnText) match = true;
-          else if (p.dataset.buttonList && p.dataset.buttonList.includes(btnText)) match = true;
+          if (p.dataset.btn === btnText) {
+            match = true;
+          } else if (p.dataset.buttonList) {
+            try {
+              const list = JSON.parse(p.dataset.buttonList);
+              if (Array.isArray(list) && list.includes(btnText)) match = true;
+            } catch (_) {
+              if (p.dataset.buttonList === btnText) match = true;
+            }
+          }
         }
         if (match) {
           p.classList.add("highlighted");
@@ -1559,7 +1592,7 @@ const ICON_SYMBOLS = {
         const boxH = maxY - minY + 240;
         const targetScale = Math.min(1.0, Math.max(0.15, Math.min(window.innerWidth / boxW, window.innerHeight / boxH)));
         const targetPanX = (window.innerWidth - (maxX + minX) * targetScale) / 2;
-        const targetPanY = Math.max(30, (window.innerHeight - (maxY + minY) * targetScale) / 2);
+        const targetPanY = (window.innerHeight - (maxY + minY) * targetScale) / 2;
         smoothFlyTo(targetPanX, targetPanY, targetScale, 700);
       }
     }

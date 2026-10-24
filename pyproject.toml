@@ -14,6 +14,9 @@ keywords = ["telegram", "telegram-bot", "ast", "flowchart", "visualizer", "linte
 dependencies = []
 
 [project.optional-dependencies]
+dast = [
+    "telethon>=1.36,<2",
+]
 dev = [
     "pytest>=8.0",
 ]
@@ -29,5 +32,12 @@ include = ["tg_flowmap*"]
 include-package-data = true
 
 [tool.setuptools.package-data]
-tg_flowmap = ["templates/*"]
+tg_flowmap = [
+    "visualizer/templates/*",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+addopts = "--basetemp=.pytest_temp"
+
 
