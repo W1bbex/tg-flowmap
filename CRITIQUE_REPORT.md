@@ -1,246 +1,138 @@
 # Технический аудит и критика проекта tg-flowmap
 
-> Дата: 24 октября 2026 г. | Профиль: **Open Source** (`C:\Projects\.github\tg-flowmap`) | Статус: **Верифицировано родителем (Zero False Positives)**
-
----
-
-## 🌐 Специальный раздел: Оценка готовности к Open Source
-
-### Итоговый вердикт: **92% (Готов к публичному релизу на GitHub и PyPI / P0-P1 устранены)**
-
-Проект обладает выдающейся концептуальной задумкой, качественным ядром (205 проходящих тестов, разделение на SAST и DAST, интерактивный HTML-визуализатор), а также закрытыми юридическими и CI/CD блокерами.
-
-| Направление | Оценка | Статус | Состояние |
-| :--- | :---: | :---: | :--- |
-| **Юридическая чистота** | **10 / 10** | 🟢 Готово | В корне добавлен файл `LICENSE` (MIT License). Код готов к открытой публикации. |
-| **CI / CD и DevOps** | **10 / 10** | 🟢 Готово | Настроен GitHub Actions workflow (`.github/workflows/tests.yml`): матрица Ubuntu/Windows x Python 3.10-3.13. |
-| **Безопасность и утечки** | **9 / 10** | 🟢 Готово | В `SafetyFilter` валидируется `callback_data`, устранен XSS в `viewer.js` и `html_render.py`, абсолютные пути хоста исключены из `report.md`. |
-| **Упаковка и CLI (PyPI)** | **9 / 10** | 🟢 Готово | Исправлены флаги `--version` и `-v`, настроен zero-boilerplate роутинг команд. |
-| **Качество кода и надежность**| **8 / 10** | 🟢 Готово | Исправлен tie-breaker в алгоритме Дейкстры, `isolation_level=None` в SQLite, устранены падения при тостах. |
-| **Кросс-платформенность** | **9 / 10** | 🟢 Готово | Все тесты проходят на Windows и Linux. Пути нормализованы через `pathlib.Path`. |
-| **Документация и Community** | **8 / 10** | 🟡 Приемлемо | README содержит полное руководство и актуальный бейдж 205 тестов. |
-
----
+> Дата: 2026-10-26 | Профиль: Open Source | Статус: Верифицировано родителем
 
 ## 1. 🚨 Критические дефекты и уязвимости (P0 / P1)
 
-### 1.1. Краш алгоритма Дейкстры при равной стоимости путей (Heap Tie-Break Crash)
-- **Файлы и строки:**
-  - [`tg_flowmap/dast/navigation_graph.py:195, 219`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/navigation_graph.py#L195)
-  - [`tg_flowmap/dast/navigation_graph.py:235, 262`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/navigation_graph.py#L235)
-- **Код:**
-  ```python
-  pq: list[tuple[float, str, list[EdgeInfo]]] = [(0.0, start_screen_id, [])]
-  ...
-  heapq.heappush(pq, (next_cost, next_sid, path + [edge]))
-  ```
-- **Механика сбоя:** `EdgeInfo` объявлен как обычный `@dataclass` без `order=True` и без метода `__lt__`. Если в очереди с приоритетом `heapq` встречаются два альтернативных маршрута к экрану с одинаковой суммарной стоимостью `next_cost` и одинаковым `next_sid`, алгоритм переходит к сравнению третьего элемента кортежа — списка `list[EdgeInfo]`. Сравнение списков инициирует `EdgeInfo < EdgeInfo`, что вызывает фатальное исключение:
-  `TypeError: '<' not supported between instances of 'EdgeInfo' and 'EdgeInfo'`.
-- **Последствия в проде:** Падение воркера навигации при сканировании разветвленных меню Telegram-ботов с симметричными стоимостями переходов.
+- [tg_flowmap/cli.py:L240-L242](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/cli.py#L240-L242) + [tg_flowmap/dast/config.py:L138-L139](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/config.py#L138-L139) — **Утечка приватного файла Telegram-сессии (.session) в пользовательскую папку отчетов**
+  - **Механика**: В `run_dast_scan` при передаче аргумента `-o / --output` выполняется `cfg.root = output_dir`. Свойство `session_path` в `config.py` вычисляется как `self.root / self.session_name`. В результате файл Telethon-сессии (`market_research.session`), содержащий приватные ключи авторизации, хэши Telegram API и токены доступа пользователя, сохраняется прямо в пользовательскую папку с публичными отчетами.
+  - **Последствия**: При публикации, отправке коллегам или загрузке отчетов на GitHub / сервер происходит полная компрометация учетной записи Telegram. Кроме того, `cfg.output_dir` превращается в `output_dir / "output"`, создавая ошибочную двойную вложенность.
 
----
+- [tg_flowmap/cli.py:L298-L308](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/cli.py#L298-L308) + [tg_flowmap/dast/reports.py:L205](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/reports.py#L205) — **Полная неработоспособность сравнения DAST-обходов (`tg-flowmap compare`)**
+  - **Механика**: В `graph.json`, генерируемом `reports.py:205`, ключами верхнего уровня являются `"nodes"`, `"edges"` и `"routes"`. Ключа `"screens"` в JSON не существует. Функция `_load_target_data` в `cli.py` вызывает `graph_data.get("screens", [])`, что всегда возвращает пустой список `[]`. Метрика `screens_count` всегда оказывается равной 0, массив экранов пуст, а `buttons_count` ошибочно вычисляется как `len(routes)`.
+  - **Последствия**: Команда `tg-flowmap compare @bot1 @bot2` для динамических отчетов всегда формирует пустой отчет с 0 экранов и 0 кнопок.
 
-### 1.2. Конфликт транзакций SQLite (`cannot start a transaction within a transaction`)
-- **Файлы и строки:**
-  - [`tg_flowmap/dast/state.py:282`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/state.py#L282)
-  - [`tg_flowmap/dast/state.py:334`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/state.py#L334)
-- **Код:**
-  ```python
-  self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=10.0)
-  ...
-  with self._lock:
-      self._conn.execute("BEGIN IMMEDIATE")
-  ```
-- **Механика сбоя:** Подключение создано со стандартным для Python режимом транзакций (`isolation_level=""`). При выполнении любых DML-запросов (`INSERT`, `UPDATE`, `DELETE`) стандартный драйвер Python неявно открывает транзакцию. При последующем вызове менеджера контекста `with state.transaction():` ручной запрос `BEGIN IMMEDIATE` падает с:
-  `sqlite3.OperationalError: cannot start a transaction within a transaction`.
-- **Доказательство:** Тест `python -c "import sqlite3; c=sqlite3.connect(':memory:'); c.execute('CREATE TABLE t(x)'); c.execute('INSERT INTO t VALUES(1)'); c.execute('BEGIN IMMEDIATE')"` падает со 100% воспроизводимостью.
-- **Исправление:** Передать `isolation_level=None` при создании подключения `sqlite3.connect()`.
+- [.github/workflows/tests.yml:L30-L35](file:///C:/Projects/.github/tg-flowmap/.github/workflows/tests.yml#L30-L35) + [pyproject.toml:L17](file:///C:/Projects/.github/tg-flowmap/pyproject.toml#L17) — **Падение CI тестового пайплайна на чистых раннерах GitHub Actions**
+  - **Механика**: В `pyproject.toml` зависимость `telethon` объявлена как опциональная `[project.optional-dependencies] dast`, а `dependencies = []`. В workflow указано `pip install -e .` (без экстра-пакета `[dast]`). В файле `tests/dast/conftest.py:22` происходит безусловный импорт `from telethon.tl.types import ...`.
+  - **Последствия**: Запуск тестов на свежих раннерах в GitHub Actions падает на этапе сбора тестов с `ModuleNotFoundError: No module named 'telethon'`.
 
----
+- [tg_flowmap/sast/evaluator.py:L26-L32](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/sast/evaluator.py#L26-L32) — **Логическая инверсия булевых условий при вычислении унарного `not` в AST**
+  - **Механика**: В `evaluate_ast_node` блок `isinstance(node, ast.UnaryOp)` проверяет только `ast.USub` и `ast.UAdd`, а для остальных операторов выполняет `return val`. Если узел является оператором `not`, выражение `not True` вычисляется как `True`, а `not False` как `False`.
+  - **Последствия**: Все инвертированные булевы условия в анализируемых ботах вычисляются некорректно, искажая дерево переходов и маппинг экранов.
 
-### 1.3. Полный обход защитного фильтра через callback-данные (Safety Bypass)
-- **Файл и строки:** [`tg_flowmap/dast/safety.py:94-164`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/safety.py#L94)
-- **Код:**
-  ```python
-  def button_verdict(
-      self, label: str, button_type: str, screen_text: str,
-      callback_data: bytes | None = None, requires_password: bool = False,
-  ) -> tuple[bool, str | None]:
-      # callback_data нигде не используется в теле функции!
-  ```
-- **Механика сбоя:** Аргумент `callback_data` принимается на входе, однако в теле метода `button_verdict` **ни одной проверки по нему не производится**. Если деструктивная кнопка имеет нейтральный текст ("Да", "Подтвердить", "Ок", "➡️", "1") и содержит деструктивную полезную нагрузку (`b"admin:delete_db"`, `b"profile:wipe"`), фильтр безопасности возвращает `(True, None)`. Кроме того, в `DEFAULT_DANGER_WORDS` (`config.py:12-15`) отсутствуют слова удаления/блокировки: `delete`, `remove`, `clear`, `reset`, `ban`, `kick`, `wipe`, `стереть`, `сбросить`, `удалить`.
-- **Последствия в проде:** Автономный краулер нажимает кнопки сброса аккаунта или удаления данных в боевых ботах.
+- [tg_flowmap/sast/evaluator.py:L110-L118](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/sast/evaluator.py#L110-L118) & [L171-L175](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/sast/evaluator.py#L171-L175) — **Необработанный `TypeError: unhashable type` при подписке и вызове `.get()`**
+  - **Механика**: При разборе конструкций `dict_obj.get(key)` или `val[key]`, если `key` вычисляется в нехэшируемый тип (список или словарь), операции `key in val` и `.get(key)` падают с исключением `TypeError: unhashable type: 'list'`, не перехваченным в `evaluate_ast_node`.
+  - **Последствия**: Статический анализатор аварийно прерывает сканирование репозитория бота при наличии выражений с динамическими ключами-списками.
 
----
+- [tg_flowmap/dast/crawler.py:L318](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/crawler.py#L318) + [L844-L851](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/crawler.py#L844-L851) — **Разрыв графового восстановления маршрутов (Graph Recovery Breakage)**
+  - **Механика**: При переходе по экранам через прямое действие в `_observe_outcome_for_step` передается флаг `create_route=False`. Из-за этого запись в таблицу `routes` для открытого экрана не создается. Когда `RoutePlanner` позже инициирует восстановление через `/start`, `route_path_map` возвращает пустой маршрут `[]`. В методе `_replay_path` проверка `nav_ref.screen_id == target_screen_id` проваливается (поскольку `/start` вернул root-экран, а target глубоко вложен), экран помечается как `recovery_exhausted`, и исследование всей ветки блокируется.
+  - **Последствия**: Краулер теряет способность восстанавливать контекст и исследовать глубокие ветки меню бота.
 
-### 1.4. Необработанный `IndexError` и захват устаревших переменных в парсере клавиатур
-- **Файл и строки:** [`tg_flowmap/sast/parser.py:458-464`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/sast/parser.py#L458)
-- **Код:**
-  ```python
-  if isinstance(elt, ast.Name) and elt.id in local_vars:
-      candidate_elts = [local_vars[elt.id][0]]
-  ```
-- **Механика сбоя:**
-  1. `local_vars` хранит список выражений. Если список для переменной пуст, взятие `[0]` приводит к мгновенному падению с необработанным `IndexError: list index out of range`.
-  2. В `local_vars` присваивания добавляются хронологически. Взятие `[0]` берет **самое старое** значение переменной вместо актуального последнего (`[-1]`). В аналогичном модуле `evaluator.py:59` доступ реализован корректно через `local_vars[node.id][-1]`.
+- [tg_flowmap/dast/crawler.py:L658-L664](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/crawler.py#L658-L664) + [L565-L571](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/crawler.py#L565-L571) — **Несовпадение формата ID действий блокирует Dijkstra-навигацию через кнопки Back**
+  - **Механика**: Метод `_return_to_screen` регистрирует ребро графа с `action_id = btn_to_press.button_fp` (16-символьный хэш) или `"act_back"`. При последующем прохождении пути через `_execute_local_path` ищется действие в `state.actions_for_screen`, где все идентификаторы имеют каноничный формат `act_<sha256>`. Совпадения никогда не происходит (`act is None`), ребро признается нестабильным, и прохождение пути завершается ошибкой.
+  - **Последствия**: Все локальные возвраты графа через кнопки «Назад» гарантированно терпят неудачу в рантайме.
 
----
-
-### 1.5. Разрушение контекста сообщения при Alert/Toast коллбеках
-- **Файлы и строки:**
-  - [`tg_flowmap/dast/crawler.py:555`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/crawler.py#L555)
-  - [`tg_flowmap/dast/crawler.py:584`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/crawler.py#L584)
-- **Механика сбоя:** При нажатии inline-кнопки, возвращающей только toast/popup (`answer_only`), `exec_res.nav_msg` и `exec_res.nav_rowid` равны `None`. Метод `self._set_position(dest_sid, exec_res.nav_msg, exec_res.nav_rowid)` перезаписывает `self._current_msg = None`. В результате следующие действия в `_execute_direct_action` прерываются, а `_return_to_screen` падает с `AttributeError: 'NoneType' object has no attribute 'id'`. Более того, условие на строке 584 ошибочно считает `answer_only` сбоем и пессимизирует ребро графа до нестабильного.
-
----
-
-### 1.6. Ложное объединение экранов и удаление узлов команд в SAST
-- **Файл и строки:** [`tg_flowmap/sast/parser.py:170-176`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/sast/parser.py#L170)
-- **Код:**
-  ```python
-  if other_node.keyboard and other_node.keyboard.name == node.keyboard.name:
-      target_screen = other_node
-      break
-  ```
-- **Механика сбоя:** В методе `_consolidate_duplicate_screens()` объединение происходит по совпадению имени клавиатуры ДО проверки команд и назначения экрана. Если разные экраны (например, `/help` и `/start`) используют общую навигационную панель (`def get_nav_markup(): ...`) или общую переменную `markup`, узел `/help` ошибочно объявляется псевдонимом и полностью удаляется из графа.
-
----
-
-### 1.7. Игнорирование объединений в Python 3.10+ Pattern Matching (`MatchOr`)
-- **Файл и строки:** [`tg_flowmap/sast/parser.py:581-588`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/sast/parser.py#L581)
-- **Код:**
-  ```python
-  if hasattr(ast, "MatchValue") and isinstance(pattern, ast.MatchValue):
-      val = _ast_to_value(pattern.value, {}, self.global_constants)
-  ```
-- **Механика сбоя:** При синтаксисе `case "menu" | "catalog":` создается AST-узел `ast.MatchOr`, содержащий внутри список `MatchValue`. Проверка `isinstance(pattern, ast.MatchValue)` дает `False`. Любые объединенные ветки `match/case` полностью игнорируются, а маршруты из них теряются.
-
----
-
-### 1.8. Stored DOM XSS в HTML-визуализаторе и инъекция в `report.md`
-- **Файлы и строки:**
-  - [`tg_flowmap/visualizer/templates/viewer.js:741-743, 916`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/visualizer/templates/viewer.js#L741)
-  - [`tg_flowmap/dast/html_render.py:51-55`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/html_render.py#L51)
-  - [`tg_flowmap/dast/reports.py:345-348`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/reports.py#L345)
-- **Механика сбоя:**
-  1. В `viewer.js` кастомные эмодзи (`rawData.custom_emojis[id]`) подставляются в `<img src="${...}">` **после** завершения работы функции `escapeHtml()`. При вредоносном URL эмодзи происходит выход из атрибута и выполнение произвольного JS в браузере.
-  2. В `html_render.py` не валидируется протокол URL: ссылки вида `javascript:alert(1)` экранируются по спецсимволам, но протокол `javascript:` остается активным.
-  3. В генераторе `report.md` в ячейках таблиц Markdown экранируются только пайпы `|` и переводы строк, но не теги `<` и `>`, что приводит к интерпретации сырого HTML в предпросмотре GitHub/VS Code.
-
----
-
-### 1.9. Утечка абсолютных путей файловой системы хоста в экспортируемый отчет
-- **Файл и строки:** [`tg_flowmap/dast/reports.py:375-377`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/reports.py#L375)
-- **Код:**
-  ```python
-  lines.append("**Медиа:** " + "; ".join(
-      f"[{m['kind']}]" + (f"({m['file_path']})" if m["file_path"] else "(не скачано)")
-      for m in medias))
-  ```
-- **Механика сбоя:** `m['file_path']` хранит абсолютный путь в файловой системе хоста (`C:\Projects\.github\tg-flowmap\output\@bot\media\...`). В экспортируемом отчете раскрывается структура дисков, имя пользователя ОС и локальные каталоги.
-
----
-
-### 1.10. Падение CLI на стандартных флагах `--version` и `-v`
-- **Файл и строки:** [`tg_flowmap/cli.py:402-406`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/cli.py#L402)
-- **Механика сбоя:** Автоматический роутинг на `sast` перехватывает любые аргументы, не входящие в список сабкоманд. Флаг `--version` подставляется как `sast --version`, что вызывает синтаксическую ошибку `argparse: error: the following arguments are required: target`.
+- [tg_flowmap/dast/navigator.py:L210-L216](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/navigator.py#L210-L216) — **Преждевременный выход теряет реальные ответы ботов и создает мертвый код**
+  - **Механика**: При ошибке или таймауте callback query в `_press_callback` метод сразу возвращает `PressOutcome(kind="error", ...)`, минуя `router.wait_result`. Большинство ботов редактируют сообщение без вызова `answerCallbackQuery`. В итоге краулер игнорирует пришедшее сообщение бота, а строка L231 (`elif err is not None:`) оказывается абсолютно недостижимой.
+  - **Последствия**: Ложные таймауты и пропуск экранов на ботах, не вызывающих `answerCallbackQuery`.
 
 ---
 
 ## 2. ⚠️ Архитектурные костыли и антипаттерны (P2)
 
-1. **Сломанное сравнение Target A в режиме `compare`**
-   - [`tg_flowmap/cli.py:280-350`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/cli.py#L280): Для Target B предусмотрен fallback поиска в кэше DAST (`out_dir / b_clean / "graph.json"`), а для Target A такой fallback отсутствует вовсе. Сравнение двух сканированных ботов `tg-flowmap compare @bot1 @bot2` выставляет `@bot1` нулевые метрики.
-2. **Пропуск шагов навигации при циклическом реплее**
-   - [`tg_flowmap/dast/crawler.py:848-850`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/crawler.py#L848): Условие `if self._current_screen_id == expected_screen: continue` пропускает нажатие кнопки, если целевой экран совпадает с текущим (например, при пагинации или фильтрации in-place).
-3. **Необработанный `AttributeError` в `entities_signature`**
-   - [`tg_flowmap/dast/screen_identity.py:66`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/screen_identity.py#L66): В отличие от `buttons_signature`, здесь безусловно вызывается `e.get()`. Передача объектов-датаклассов `EntityInfo` вызывает `AttributeError`.
-4. **Отсутствие проверки циклических ссылок в сериализаторе**
-   - [`tg_flowmap/dast/tl_serial.py:24-54`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/tl_serial.py#L24): Функция `clean()` не ведет реестр посещенных объектов (`seen`), что приводит к `RecursionError` при любых циклических структурах.
-5. **Прерывание сканирования рабочих пространств в лаунчере**
-   - [`run.py:60-72`](file:///C:/Projects/.github/tg-flowmap/run.py#L60): Вложенный обход директорий не защищен внутри цикла: при ошибке `PermissionError` на одном каталоге сбрасывается весь поиск ботов по воркспейсу.
-6. **Ввод токена бота в открытом виде**
-   - [`run.py:199`](file:///C:/Projects/.github/tg-flowmap/run.py#L199): Используется стандартный `input()` вместо `getpass.getpass()`, токен отображается в терминале.
+- [tg_flowmap/dast/map_render.py:L498-L503](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/map_render.py#L498-L503) — **Неэкранированные символы пайпа `|` и переводы строк `\n` ломают диаграммы Mermaid**
+  - Синтаксис стрелок `-->|"label"|` нарушается, если в тексте кнопки содержится `|` (например, `Оплата | СБП`) или перенос строки. Файл `map.mmd` становится невалидным для парсеров GitHub и Mermaid CLI.
+
+- [tg_flowmap/dast/safety.py:L148-L150](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/safety.py#L148-L150) & [L161-L174](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/safety.py#L161-L174) — **Обход проверки деструктивных callback payload через белый список названий**
+  - Проверка `allowed_labels` выполняется до анализа опасных паттернов в `callback_data`. Кнопка с невинным текстом «Да» или «Меню», но с пейлоадом `delete_account` или `confirm_charge`, пропускается фильтром безопасности.
+
+- [tg_flowmap/dast/safety.py:L14-L19](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/safety.py#L14-L19) — **Отсутствие поддержки TON-кошельков (The Open Network)**
+  - Список `WALLET_REGEXES` содержит регулярные выражения для ETH, BTC и TRON, но не отслеживает адреса TON (`EQ...` / `UQ...`), являющиеся базовым платежным инструментом Telegram. Экраны с TON-оплатой не помечаются как финансово опасные.
+
+- [tg_flowmap/dast/media.py:L76-L86](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/media.py#L76-L86) — **Утечка поврежденных файлов медиа при отмене загрузки (`asyncio.CancelledError`)**
+  - Блок `except Exception:` не перехватывает отмену задачи (`BaseException`). Частично скачанный файл остается на диске, а при следующем запуске проверка `st_size > 0` воспринимает его как валидный, навсегда фиксируя поврежденный медиафайл.
+
+- [tg_flowmap/sast/parser.py:L517](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/sast/parser.py#L517) — **Потеря метаданных кнопок при разворачивании списковых включений**
+  - При генерации кнопок из list comprehension создается новый объект `Button(text=..., callback_data=...)`, теряя `icon_custom_emoji_id`, `style`, `url` и другие атрибуты оригинального `elt_btn`.
+
+- [tg_flowmap/sast/parser.py:L613-L620](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/sast/parser.py#L613-L620) — **Ложные срабатывания `dead_end` на aiogram 3 CallbackData фабриках с `.pack()`**
+  - Вызов `MyCallback(...).pack()` извлекает имя метода `"pack"` вместо префикса класса `MyCallback`, что приводит к несовпадению с зарегистрированными хэндлерами и ложным сообщениям о тупиковых кнопках.
+
+- [tg_flowmap/dast/comparison.py:L70-L82](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/comparison.py#L70-L82) — **N+1 запросы к SQLite и квадратичная O(S*B) сложность в сборе статистики**
+  - В цикле по экранам на каждой итерации выполняется отдельный SQL-запрос наличия медиа и полный перебор всех кнопок бота.
+
+- [tg_flowmap/dast/config.py:L10](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/config.py#L10) — **Засорение `site-packages` рабочими базами данных при установке через pip**
+  - `PACKAGE_ROOT = Path(__file__).resolve().parents[2]` указывает на каталог `site-packages` при установленном пакете. `Config()` без параметров начинает создавать `explorer.db` и файлы сессий прямо внутри системного окружения Python.
 
 ---
 
 ## 3. 🏰 Монолитность и архитектурная декомпозиция (God Objects & Complexity)
 
-### 3.1. Анализ файлов-монолитов и Maintainability Index (`radon mi`)
+- **Файлы-монолиты (> 800 строк)**:
+  - [`tg_flowmap/sast/parser.py`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/sast/parser.py): **1,193 строки** (класс `AstParser` — 1,144 строки, Maintainability Index: **C (0.00)**). Нарушение лимита в 1,000 строк.
+  - [`tg_flowmap/dast/state.py`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/state.py): **1,014 строк** (класс `State` — 15 таблиц БД, 45+ методов, смешение DDL, DML и бизнес-логики без контекстного менеджера).
+  - [`tg_flowmap/dast/crawler.py`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/crawler.py): **979 строк** (класс `BotCrawler` — 918 строк, Maintainability Index: **C (0.00)**).
 
-По результатам сканирования два ключевых модуля имеют **нулевой индекс поддерживаемости (C: 0.00)** и нарушают правило монолитности (потолок 800–1000 строк):
+- **Критическая цикломатическая сложность (radon cc rank E/F)**:
+  - `tg_flowmap/sast/parser.py: AstParser._find_message_dispatch` — **F (109)** (180 строк, 6 уровней вложенности).
+  - `tg_flowmap/sast/evaluator.py: evaluate_ast_node` — **F (103)**.
+  - `tg_flowmap/sast/analyzer.py: GraphAnalyzer.build_map` — **F (79)**.
+  - `tg_flowmap/sast/parser.py: AstParser._parse_keyboard_function` — **F (56)**.
+  - `tg_flowmap/dast/reports.py: build_report_md` — **F (46)**.
+  - `tg_flowmap/dast/safety.py: SafetyFilter.button_verdict` — **E (39)**.
+  - `tg_flowmap/dast/comparison.py: generate_comparison` — **E (39)**.
 
-| Файл | Строк | Radon MI | Проблема архитектуры |
-| :--- | :---: | :---: | :--- |
-| [`tg_flowmap/dast/state.py`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/state.py) | **1014** | A (22.26) | **God Object**: 15 таблиц SQLite, миграции, нормализация, очередь frontier, метрики и логи в одном классе. |
-| [`tg_flowmap/sast/parser.py`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/sast/parser.py) | **1005** | **C (0.00)** | **God Object**: Смешение парсинга AST, извлечения клавиатур, анализаторов фреймворков (aiogram/telebot) и резолвинга роутов. |
-| [`tg_flowmap/dast/crawler.py`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/crawler.py) | **975** | **C (0.00)** | **God Object**: Цикл краулера, стейт-машина, реплей путей, обработка Telethon-событий в одном файле. |
-
-### 3.2. Функции с критической цикломатической сложностью (`radon cc` ранги E и F)
-
-| Функция / Метод | Файл | Строка | CC | Ранг |
-| :--- | :--- | :---: | :---: | :---: |
-| `AstParser._find_message_dispatch` | `tg_flowmap/sast/parser.py` | 758 | **85** | **F** |
-| `evaluate_ast_node` | `tg_flowmap/sast/evaluator.py` | 7 | **84** | **F** |
-| `GraphAnalyzer.build_map` | `tg_flowmap/sast/analyzer.py` | 24 | **55** | **F** |
-| `build_report_md` | `tg_flowmap/dast/reports.py` | 240 | **46** | **F** |
-| `AstParser._parse_keyboard_function` | `tg_flowmap/sast/parser.py` | 258 | **43** | **F** |
-| `AstParser._parse_keyboard_expr` | `tg_flowmap/sast/parser.py` | 345 | **42** | **F** |
-| `generate_comparison` | `tg_flowmap/dast/comparison.py` | 106 | **39** | **E** |
-
-### 3.3. Рекомендации по декомпозиции
-1. **Распил `state.py`**: выделить слой хранения (`StorageEngine` / репозитории: `BotRepository`, `MessageRepository`, `GraphEdgeRepository`, `MetricsRepository`).
-2. **Распил `parser.py`**: вынести обработчики фреймворков в стратегический паттерн (`AiogramHandlerInspector`, `TelebotHandlerInspector`), а парсинг клавиатур — в модуль `keyboard_parser.py`.
-3. **Рефакторинг `crawler.py`**: вынести логику реплея путей (`_replay_path`) в изолированный сервис `RouteReplayer`.
+- **Рекомендации по декомпозиции (SRP)**:
+  - Выделить парсинг клавиатур из `AstParser` в отдельный `KeyboardExtractor`.
+  - Выделить диспетчеризацию роутов из `AstParser` в `RouteExtractor`.
+  - В `dast/crawler.py` вынести логику восстановления маршрутов и replay в `RecoveryEngine`.
+  - Реализовать поддержку контекстного менеджера `__enter__` и `__exit__` в классе `State`.
 
 ---
 
 ## 4. 🪦 Мертвый код и рудименты (Dead Code Audit)
 
-Подтверждено инструментальным анализом (`vulture` + `git grep`):
-
-1. **Целиком заброшенный модуль `console.py` (188 строк)**
-   - [`tg_flowmap/dast/console.py`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/console.py): модуль `main_menu`, `add_bot` нигде не импортируется в проекте.
-2. **Мертвые методы в `tg_flowmap/dast/state.py`:**
-   - `upsert_emoji_document` (строки 507-512) — 0 вызовов.
-   - `add_emoji_occurrence_button` (строки 514-527) — 0 вызовов (используется `_add_button_emoji_in_tx`).
-   - `action_is_explored` (строки 728-733) — 0 вызовов.
-   - `metric_set` (строки 794-804) — 0 вызовов (используется `metric_incr`).
-   - `metric_get` (строки 806-811) — 0 вызовов (используется `metrics_all`).
-   - `frontier_pending_count` (строки 925-928) — 0 вызовов.
-3. **Мертвые утилиты и переменные:**
-   - `utf16_length` в [`tg_flowmap/dast/utf16.py:6`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/utf16.py#L6) — 0 вызовов.
-   - `best_target`, `best_path`, `best_cost` в [`tg_flowmap/dast/navigation_graph.py:238-240`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/navigation_graph.py#L238) — неиспользуемые переменные.
-   - `estimated_cost` в [`tg_flowmap/dast/route_planner.py:26`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/route_planner.py#L26) — поле заполняется, но никогда не читается.
-   - `is_dast_available` в [`tg_flowmap/dast/__init__.py:6`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/__init__.py#L6) — 0 вызовов в пакете.
-
----
-
-## 5. 💎 Инженерные находки (Реальные плюсы проекта)
-
-1. **Надежная тестовая база (198 тестов)**: Проект имеет отлично покрытые unit-тестами базовые компоненты (все 198 тестов проходят быстро и стабильно).
-2. **Умная канонизация экранов (`screen_identity.py`)**: Алгоритм нормализации текстов сообщений с вырезанием динамических дат, цен и счетчиков (`volatile_patterns`) — первоклассное инженерное решение для Telegram DAST.
-3. **Гибридный SAST + DAST подход**: Сочетание мгновенного статического анализа AST (без запуска кода) и динамического подтверждения через Telethon юзербота — уникальное и мощное позиционирование на рынке Telegram-инструментов.
-4. **Премиальный интерактивный визуализатор (`viewer.js` / SVG)**: Рендеринг Telegram-стилизованных карточек, отображение стилей кнопок Telegram 1.44 (primary, success, danger) и подсветка тупиков.
+- **Заброшенные файлы**:
+  - [`tg_flowmap/dast/console.py`](file:///C:/Projects/.github/tg-flowmap/tg_flowmap/dast/console.py) (**188 строк**): модуль с функциями `main_menu`, `add_bot`, `list_bots`, `start_scan` нигде в проекте не импортируется и не используется.
+- **Неиспользуемые и дублирующиеся импорты**:
+  - `tg_flowmap/cli.py:210`: `telethon` (vulture 90%).
+  - `tg_flowmap/cli.py:220`: повторный `import asyncio`.
+  - `tg_flowmap/cli.py:221`: `Config` не используется в `run_dast_scan`.
+  - `tg_flowmap/dast/fingerprint.py:9-12`: `json`, `re`, `Any`, `Iterable`.
+  - `tg_flowmap/dast/navigator.py:43`: локальный дублирующий `import asyncio`.
+  - `tg_flowmap/core/comparator.py:3, 5`: `json`, `List`, `Optional`.
+  - `tg_flowmap/core/llm_exporter.py:3`: `Path`.
+  - `tg_flowmap/sast/emoji.py:7`: `urllib.error`.
+- **Мертвые ветки условий**:
+  - `tg_flowmap/dast/navigator.py:231`: ветка `elif err is not None:` никогда не выполняется из-за досрочного `return` на L216.
+  - `tg_flowmap/sast/parser.py:180-182`: ветка `not node.keyboard` недостижима из-за `if not node.keyboard: continue` на L165.
+  - `tg_flowmap/sast/parser.py:1075-1080`: дублирующая ветка `if attr_name in self.keyboards: ... else: ...`.
+- **Рудиментарные корневые шимы**:
+  - `tg_flowmap/analyzer.py`, `tg_flowmap/ast_evaluator.py`, `tg_flowmap/emoji_fetcher.py`, `tg_flowmap/models.py`, `tg_flowmap/parser.py`.
 
 ---
 
-## 6. 🛠 Приоритетный Roadmap исправлений перед Open Source релизом
+## 5. 💎 Инженерные находки (Реальные плюсы)
 
-### Этап 1: Устранение блокеров релиза (P0 / Лицензирование / CI) — [x] ИСПРАВЛЕНО
-- [x] Добавлен в корень файл `LICENSE` (MIT License).
-- [x] Создан `.github/workflows/tests.yml` (автозапуск `pytest` на Python 3.10-3.13 под Ubuntu и Windows).
-- [x] Добавлен tie-breaker счётчик `itertools.count()` в `find_shortest_path` (`navigation_graph.py`), исключив краш Дейкстры.
-- [x] Установлен `isolation_level=None` в `sqlite3.connect` (`state.py`), устранив конфликт транзакций.
-- [x] Исправлен `cli.py`: добавлены флаги `--version` / `-v` и предотвращен ложный роутинг флагов в команду `sast`.
+- **Безопасный статический анализ без выполнения непроверенного кода**: парсер полностью анализирует структуру Telegram-ботов через AST Python без импорта и исполнения кода.
+- **Эвристическая защита от списаний баланса и выполнения покупок в DAST**: многоуровневый фильтр контекста сообщений защищает от случайных оплат при динамическом сканировании.
+- **Оптимизация обхода через граф переходов (Dijkstra)**: минимизация вызовов API и избежание FloodWait за счет локальных перемещений по известным ребрам.
+- **Автономный интерактивный визуализатор**: генерация единого HTML-файла с поддержкой SVG, масштабированием и предпросмотром экранов.
 
-### Этап 2: Закрытие дефектов безопасности и надежности (P1) — [x] ИСПРАВЛЕНО
-- [x] Подключена валидация `callback_data` в `SafetyFilter.button_verdict` и расширен `DEFAULT_DANGER_WORDS` деструктивными командами (`delete`, `ban`, `clear`, `reset`, `wipe`).
-- [x] Исправлен Stored DOM XSS в `viewer.js` (экранирован URL кастомных эмодзи) и `html_render.py` (белый список протоколов `https://`, `http://`, `tg://`).
-- [x] Заменены абсолютные пути хоста в `reports.py` на относительные пути (`media/...`) внутри артефакта отчета.
-- [x] Исправлен `parser.py`: безопасное взятие последнего значения `local_vars[elt.id][-1]` с проверкой на пустоту, поддержка `ast.MatchOr`, защита команд от ложного слияния.
+---
 
-### Этап 3: Очистка мертвого кода и декомпозиция (P2)
-- [ ] Удалить заброшенный `console.py` и неиспользуемые методы в `state.py`.
-- [ ] Разгрузить монолитные файлы `parser.py` и `crawler.py`.
-- [ ] Добавить `CONTRIBUTING.md`.
+## 6. 🛠 Приоритетный Roadmap исправлений
+
+1. **Этап 1: Безопасность и работоспособность CI/CD (P0)**
+   - Изолировать размещение файлов сессии Telethon от папки отчетов в `cli.py` и `config.py`.
+   - Исправить сопоставление полей `graph.json` в `cli.py:299` для восстановления работы команды `tg-flowmap compare`.
+   - В `.github/workflows/tests.yml` добавить установку `.[dast]`.
+2. **Этап 2: Критические дефекты анализатора и краулера (P1)**
+   - Добавить поддержку `ast.Not` и защиту от unhashable-типов в `evaluator.py`.
+   - Исправить сохранение маршрутов `create_route=True` для новых экранов и выравнивание action_id в `crawler.py`.
+   - Устранить досрочный возврат при callback-ошибке в `navigator.py`.
+3. **Этап 3: Декомпозиция монолитов и чистка мертвого кода (P2 / P3)**
+   - Удалить мертвый модуль `console.py` (188 строк) и почистить неиспользуемые импорты.
+   - Экранировать спецсимволы в `map_render.py` для корректного рендеринга Mermaid.
+   - Добавить регулярное выражение для TON-кошельков и переместить проверку callback payload в `safety.py`.
+   - Провести декомпозицию `sast/parser.py` (1,193 строки) и `dast/crawler.py` (979 строк).

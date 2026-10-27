@@ -177,7 +177,7 @@ class AstParser:
                     if name_matches and kb_matches:
                         target_screen = other_node
                         break
-                    if other_clean in (f"{cmd_clean}_menu", f"{cmd_clean}_open", cmd_clean, f"open_{cmd_clean}") and not other_node.keyboard and not node.keyboard:
+                    if other_clean in (f"{cmd_clean}_menu", f"{cmd_clean}_open", cmd_clean, f"open_{cmd_clean}") and not other_node.keyboard:
                         target_screen = other_node
                         break
 
@@ -514,7 +514,15 @@ class AstParser:
                             if isinstance(items_val, list):
                                 iter_resolved = True
                                 for item_str in items_val:
-                                    row.append(Button(text=str(item_str), callback_data=elt_btn.callback_data))
+                                    row.append(
+                                        Button(
+                                            text=str(item_str),
+                                            callback_data=elt_btn.callback_data,
+                                            url=elt_btn.url,
+                                            icon_custom_emoji_id=elt_btn.icon_custom_emoji_id,
+                                            style=elt_btn.style,
+                                        )
+                                    )
                     if not iter_resolved:
                         row.append(elt_btn)
             elif isinstance(candidate, ast.List):
@@ -610,10 +618,15 @@ class AstParser:
                 val = _ast_to_value(kw.value, local_vars or {}, self.global_constants)
                 if val is None and isinstance(kw.value, ast.Call):
                     # CallbackData factory call, e.g. NumbersCallbackFactory(action="change", value=-2)
-                    call_name = getattr(kw.value.func, "attr", None) or getattr(kw.value.func, "id", "")
-                    if call_name and call_name not in ("str", "int", "float", "len", "bool", "range"):
+                    # or aiogram 3: NumbersCallbackFactory(action="change", value=-2).pack()
+                    call_node = kw.value
+                    if isinstance(call_node.func, ast.Attribute) and call_node.func.attr == "pack":
+                        if isinstance(call_node.func.value, ast.Call):
+                            call_node = call_node.func.value
+                    call_name = getattr(call_node.func, "attr", None) or getattr(call_node.func, "id", "")
+                    if call_name and call_name not in ("str", "int", "float", "len", "bool", "range", "pack"):
                         action_val = ""
-                        for inner_kw in kw.value.keywords:
+                        for inner_kw in call_node.keywords:
                             if inner_kw.arg in ("action", "act", "type"):
                                 inner_v = _ast_to_value(inner_kw.value, local_vars or {}, self.global_constants)
                                 action_val = f":{inner_v}" if inner_v else ""
@@ -1072,9 +1085,7 @@ class AstParser:
                                     attr_name = kw.value.attr
                                     val_obj = getattr(kw.value.value, "id", "")
                                     full_name = f"{val_obj}.{attr_name}" if val_obj else attr_name
-                                    if attr_name in self.keyboards:
-                                        kb_name = kb_name or attr_name
-                                    elif full_name in self.keyboards:
+                                    if full_name in self.keyboards:
                                         kb_name = kb_name or full_name
                                     else:
                                         kb_name = kb_name or attr_name

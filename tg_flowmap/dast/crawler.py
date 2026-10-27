@@ -551,6 +551,31 @@ class BotCrawler:
                 exec_res.outcome.callback,
             )
 
+        # Сохраняем маршрут для восстановления через recovery/replay
+        if dest_sid != screen_id:
+            known = [r for r in self.state.routes_all(self.bot) if r.get("screen_id") == screen_id and r.get("status") != "stale"]
+            parent_path = known[0]["path"] if known else []
+            parent_route_id = known[0]["route_id"] if known else None
+            step = {
+                "screen_id": dest_sid,
+                "action": act.get("label", "") or action_id,
+                "button_fp": act.get("button_fp", "") or action_id,
+                "step_type": act.get("button_type", "callback"),
+                "row": act.get("row"),
+                "col": act.get("col"),
+                "label": act.get("label", ""),
+                "action_id": action_id,
+            }
+            new_path = parent_path + [step]
+            dest_screen = self.state.get_screen(self.bot, dest_sid)
+            dest_fp = dest_screen["fingerprint"] if dest_screen else dest_sid
+            rfp = route_fingerprint(dest_fp, parent_route_id, action_id)
+            new_route_id = route_id_of(rfp)
+            self.state.upsert_route(
+                self.bot, new_route_id, rfp, parent_route_id, dest_sid,
+                new_path, depth + 1,
+            )
+
         self.state.mark_action_explored(self.bot, action_id)
         next_msg = exec_res.nav_msg if exec_res.nav_msg is not None else self._current_msg
         next_rowid = exec_res.nav_rowid if exec_res.nav_rowid is not None else self._current_msg_rowid
@@ -564,6 +589,13 @@ class BotCrawler:
 
             actions = self.state.actions_for_screen(self.bot, edge.source_screen_id)
             act = next((a for a in actions if a["action_id"] == edge.action_id), None)
+            if not act:
+                # Fallback: поиск по совпадению хэша button_fp или кнопки "Назад"
+                act = next(
+                    (a for a in actions if edge.action_id in (a.get("action_id", ""), a.get("button_fp", ""))
+                     or (edge.action_id == "act_back" and a.get("label", "").lower() in ("назад", "back", "⬅", "◀", "←"))),
+                    None,
+                )
             if not act:
                 self.graph.mark_edge_unstable(edge.source_screen_id, edge.action_id)
                 self.metrics.unstable_edges += 1
@@ -654,10 +686,16 @@ class BotCrawler:
                         outcome.message, _outcome_event_type(outcome.kind),
                         target["depth_min"], None, [], None, None,
                         create_route=False)
-                    # Регистрируем наблюдавшийся переход
+                    # Регистрируем наблюдавшийся переход с каноничным action_id
+                    act_candidates = self.state.actions_for_screen(self.bot, self._current_screen_id)
+                    matched_act = next(
+                        (a for a in act_candidates if a["row"] == back_btn.row and a["col"] == back_btn.col),
+                        None,
+                    )
+                    rec_action_id = matched_act["action_id"] if matched_act else (btn_to_press.button_fp or "act_back")
                     self.graph.record_transition(
                         self._current_screen_id,
-                        btn_to_press.button_fp or "act_back",
+                        rec_action_id,
                         ref.screen_id,
                         outcome.kind,
                         success=True,

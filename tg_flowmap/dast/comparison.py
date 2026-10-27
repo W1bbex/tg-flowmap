@@ -60,6 +60,19 @@ def collect_bot_stats(cfg: Config, state: State, bot: str) -> dict:
     price_examples: list[str] = []
     no_stock_hits = 0
     checkout_zone_screens: list[str] = []
+
+    # Предзагрузка медиа и группировка кнопок для исключения N+1 и O(S*B)
+    screens_with_media = {
+        row["screen_id"]
+        for row in state._query(
+            "SELECT DISTINCT msg.screen_id FROM media m JOIN messages msg ON msg.id=m.message_rowid WHERE msg.bot=?",
+            (bot,),
+        )
+    }
+    buttons_by_screen: dict[str, list[dict]] = {}
+    for b in buttons:
+        buttons_by_screen.setdefault(b["screen_id"], []).append(b)
+
     for s in screens:
         sid = s["screen_id"]
         text = (texts.get(sid) or "").lower()
@@ -67,17 +80,15 @@ def collect_bot_stats(cfg: Config, state: State, bot: str) -> dict:
         if prices:
             price_examples.extend(prices[:3])
         is_product = bool(prices) and any(w in text for w in PRODUCT_WORDS)
-        has_media = bool(state._query(
-            "SELECT 1 FROM media m JOIN messages msg ON msg.id=m.message_rowid "
-            "WHERE msg.bot=? AND msg.screen_id=? LIMIT 1", (bot, sid)))
+        has_media = sid in screens_with_media
         if is_product:
             product_screens += 1
             if has_media:
                 photo_product_screens += 1
         if any(p in text for p in NO_STOCK_PHRASES):
             no_stock_hits += 1
-        if any((b["blocked_reason"] or "").startswith(("checkout", "payment", "price_with"))
-               for b in buttons if b["screen_id"] == sid):
+        s_btns = buttons_by_screen.get(sid, [])
+        if any((b["blocked_reason"] or "").startswith(("checkout", "payment", "price_with")) for b in s_btns):
             checkout_zone_screens.append(sid)
 
     catalog_depth = max((s["depth_min"] for s in screens), default=0)

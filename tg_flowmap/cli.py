@@ -217,8 +217,7 @@ def run_dast_scan(
         return 1
 
     try:
-        import asyncio
-        from tg_flowmap.dast.config import Config, load_config, normalize_bot_username
+        from tg_flowmap.dast.config import load_config, normalize_bot_username
         from tg_flowmap.dast.reports import generate_reports
         from tg_flowmap.dast.scheduler import run_scan
         from tg_flowmap.dast.state import State
@@ -238,7 +237,7 @@ def run_dast_scan(
 
     cfg = load_config(cfg_file)
     if output_dir:
-        cfg.root = output_dir
+        cfg.custom_output_dir = output_dir
 
     print("=" * 60)
     print("  🤖 TG-FLOWMAP — Telegram Bot Crawler (DAST)")
@@ -296,15 +295,27 @@ def _load_target_data(target: str, out_dir: Path) -> dict:
     if cand.exists():
         try:
             graph_data = json.loads(cand.read_text(encoding="utf-8"))
-            screens = graph_data.get("screens", [])
+            nodes = graph_data.get("nodes") or graph_data.get("screens") or []
+            edges = graph_data.get("edges") or []
+            total_buttons = sum(len(n.get("buttons", [])) for n in nodes)
+            screens_list = [
+                {
+                    "screen_id": n.get("id") or n.get("screen_id"),
+                    "title": (n.get("text_normalized") or n.get("text") or n.get("id") or "").splitlines()[0][:40]
+                    if (n.get("text_normalized") or n.get("text"))
+                    else (n.get("id") or n.get("screen_id")),
+                    "buttons": n.get("buttons", []),
+                }
+                for n in nodes
+            ]
             return {
                 "metrics": {
-                    "screens_count": len(screens),
-                    "buttons_count": len(graph_data.get("routes", [])),
+                    "screens_count": len(nodes),
+                    "buttons_count": total_buttons if total_buttons > 0 else len(edges),
                     "dead_ends": 0,
                     "missing_back": 0,
                 },
-                "screens": [{"screen_id": s.get("screen_id"), "title": s.get("screen_id"), "buttons": []} for s in screens],
+                "screens": screens_list,
             }
         except Exception:
             pass

@@ -4,12 +4,33 @@
 import sqlite3
 
 import pytest
-from telethon.tl.types import (
-    KeyboardButtonCallback,
-    KeyboardButtonRow,
-    KeyboardButtonStyle,
-    ReplyInlineMarkup,
-)
+import inspect
+
+try:
+    from telethon.tl.types import (
+        KeyboardButtonCallback,
+        KeyboardButtonRow,
+        KeyboardButtonStyle,
+        ReplyInlineMarkup,
+    )
+    HAS_TELETHON_STYLE = True
+except ImportError:
+    from telethon.tl.types import (
+        KeyboardButtonCallback,
+        KeyboardButtonRow,
+        ReplyInlineMarkup,
+    )
+    HAS_TELETHON_STYLE = False
+
+    class KeyboardButtonStyle:  # type: ignore[no-redef]
+        def __init__(self, bg_primary=False, bg_success=False, bg_danger=False, icon=None):
+            self.bg_primary = bg_primary
+            self.bg_success = bg_success
+            self.bg_danger = bg_danger
+            self.icon = icon
+
+if HAS_TELETHON_STYLE and "style" not in inspect.signature(KeyboardButtonCallback.__init__).parameters:
+    HAS_TELETHON_STYLE = False
 
 from tg_flowmap.dast.capture import extract_buttons
 from tg_flowmap.dast.media import download_media, media_file_name
@@ -23,6 +44,8 @@ BOT = "@style_bot"
 
 # ------------------------------------------------------------------ П6
 def test_button_style_roundtrip_telethon_to_report():
+    if not HAS_TELETHON_STYLE:
+        pytest.skip("Requires Telethon >= 1.44 with KeyboardButtonStyle support")
     """Telethon KeyboardButtonCallback(style=KeyboardButtonStyle(...),
     requires_password=...) → ButtonRef → SQLite → graph.json."""
     markup = ReplyInlineMarkup(rows=[
@@ -46,6 +69,8 @@ def test_button_style_roundtrip_telethon_to_report():
 
 
 def test_button_style_sqlite_and_graph_roundtrip(cfg, state, tmp_path):
+    if not HAS_TELETHON_STYLE:
+        pytest.skip("Requires Telethon >= 1.44 with KeyboardButtonStyle support")
     markup = ReplyInlineMarkup(rows=[
         KeyboardButtonRow(buttons=[
             KeyboardButtonCallback(

@@ -16,6 +16,7 @@ WALLET_REGEXES = [
     re.compile(r"\bT[1-9A-HJ-NP-Za-km-z]{33}\b", re.IGNORECASE),        # TRON / USDT TRC20
     re.compile(r"\bbc1[a-z0-9]{20,60}\b", re.IGNORECASE),               # Bitcoin bech32
     re.compile(r"\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b", re.IGNORECASE),  # Bitcoin legacy
+    re.compile(r"\b[EU]Q[0-9a-zA-Z_-]{46}\b"),                          # TON / Telegram Open Network
 ]
 PAYMENT_INSTRUCTION_WORDS = [
     "переведите", "перевод на", "send the exact amount", "scan the qr", "отсканируй",
@@ -143,21 +144,7 @@ class SafetyFilter:
             return False, "payment_screen"
         if ctx["password_required"]:
             return False, "password_required"
-
-        # --- ручной allowlist: снимает мягкие блоки по тексту кнопки ---------
-        if lnorm in self.allowed_labels:
-            return True, None
-
-        # --- мягкие блоки ------------------------------------------------------
-        danger_hit = next((w for w in self.danger_words if w and w in lnorm), None)
-        if danger_hit:
-            return False, f"danger_word:{danger_hit}"
-
-        for pat in self.blocked_patterns:
-            if pat.search(lnorm):
-                return False, f"blocked_pattern:{pat.pattern}"
-
-        # Проверка опасных действий внутри callback_data payload
+        # Проверка опасных действий внутри callback_data payload (проверяется ДО allowlist)
         if callback_data:
             cb_text = ""
             if isinstance(callback_data, (bytes, bytearray)):
@@ -171,6 +158,19 @@ class SafetyFilter:
             for pat in self.blocked_patterns:
                 if pat.search(cbnorm):
                     return False, f"blocked_pattern_in_callback:{pat.pattern}"
+
+        # --- ручной allowlist: снимает мягкие блоки по тексту кнопки ---------
+        if lnorm in self.allowed_labels:
+            return True, None
+
+        # --- мягкие блоки ------------------------------------------------------
+        danger_hit = next((w for w in self.danger_words if w and w in lnorm), None)
+        if danger_hit:
+            return False, f"danger_word:{danger_hit}"
+
+        for pat in self.blocked_patterns:
+            if pat.search(lnorm):
+                return False, f"blocked_pattern:{pat.pattern}"
 
         if ctx["has_price"] and ctx["has_quantity"] and not known_purpose:
             return False, "quantity_total_unknown_action"

@@ -25,6 +25,8 @@ def evaluate_ast_node(
 
     if isinstance(node, ast.UnaryOp):
         val = evaluate_ast_node(node.operand, local_vars, global_vars, depth + 1, max_depth)
+        if isinstance(node.op, ast.Not):
+            return not val
         if isinstance(node.op, ast.USub) and isinstance(val, (int, float)):
             return -val
         if isinstance(node.op, ast.UAdd) and isinstance(val, (int, float)):
@@ -115,7 +117,10 @@ def evaluate_ast_node(
                 for kw in node.keywords:
                     if kw.arg == "default":
                         default = evaluate_ast_node(kw.value, local_vars, global_vars, depth + 1, max_depth)
-                return dict_obj.get(key, default)
+                try:
+                    return dict_obj.get(key, default)
+                except TypeError:
+                    return default
 
         # Support dict(other_dict)
         if isinstance(node.func, ast.Name) and node.func.id == "dict" and node.args:
@@ -169,10 +174,13 @@ def evaluate_ast_node(
         key = evaluate_ast_node(slice_node, local_vars, global_vars, depth + 1, max_depth)
 
         if isinstance(val, dict):
-            if key in val:
-                return val[key]
-            if str(key) in val:
-                return val[str(key)]
+            try:
+                if key in val:
+                    return val[key]
+                if str(key) in val:
+                    return val[str(key)]
+            except TypeError:
+                return None
         elif isinstance(val, (list, tuple)) and isinstance(key, int):
             try:
                 return val[key]

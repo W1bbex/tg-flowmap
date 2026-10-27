@@ -84,10 +84,13 @@ class Config:
     allowed_button_labels: list[str] = field(default_factory=list)
     volatile_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_VOLATILE_PATTERNS))
     safe_nav_words: list[str] = field(default_factory=lambda: list(DEFAULT_SAFE_NAV_WORDS))
-    root: Path = field(default=PACKAGE_ROOT, repr=False, compare=False)
+    root: Path = field(default_factory=Path.cwd, repr=False, compare=False)
+    custom_output_dir: Path | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         self.root = Path(self.root)
+        if self.custom_output_dir is not None:
+            self.custom_output_dir = Path(self.custom_output_dir)
         # max_parallel_bots: default 1, максимум 2 (вручную)
         self.max_parallel_bots = min(2, max(1, int(self.max_parallel_bots)))
         self.max_depth = max(1, int(self.max_depth))
@@ -132,6 +135,8 @@ class Config:
 
     @property
     def output_dir(self) -> Path:
+        if self.custom_output_dir is not None:
+            return self.custom_output_dir
         return self.root / "output"
 
     @property

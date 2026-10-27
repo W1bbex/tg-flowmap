@@ -10,7 +10,7 @@ Combines Zero-runtime AST Static Analysis (SAST), State-Aware Userbot Crawling (
 - Core / Benchmarker: Unified `BotMap` data models, `comparator.py`, `llm_exporter.py`.
 - Visualization: Standalone HTML5 / SVG / Vis.js Canvas (ForceAtlas2 physics, DirectWrite ClearType, zero-deck collision).
 - CLI: Zero-flag frictionless entrypoint (`tg-flowmap sast`, `tg-flowmap dast`, `tg-flowmap compare`).
-- Tests: `pytest` with 182 passing regression and performance tests in `tests/sast` and `tests/dast`.
+- Tests: `pytest` with 224 passing regression and performance tests in `tests/sast` and `tests/dast`.
 
 ## 3. Key Design Rationale
 - Pure AST analysis for local code (SAST): 0 dependencies, 50ms execution, safe for untrusted code and CI/CD.
@@ -27,7 +27,8 @@ Combines Zero-runtime AST Static Analysis (SAST), State-Aware Userbot Crawling (
 - [x] Integration of DAST engine from `TgBotExplorer` into `tg_flowmap/dast/`.
 - [x] Unified `core/` models, `BotComparator`, and `llm_exporter` for instant comparison of Bot A vs Bot B.
 - [x] Frictionless zero-flag CLI supporting `sast`, `dast`, `compare` with automatic Markdown and LLM prompt exports.
-- [x] 182 passing automated tests across SAST and DAST suites.
+- [x] 224 passing automated tests across SAST and DAST suites.
+- [x] Full security, graph recovery, and AST evaluation audit fixes (zero P0/P1 defects).
 - [x] SAST v2: Wildcard-трансформация f-строк (`f"prefix:{var}"` ➔ `prefix:*`) для устранения ложных `[DANGLING_HANDLER]`.
 - [x] SAST v2: Подавление `[MISSING_BACK]` при возврате в корневой хаб (`main_menu_markup`).
 

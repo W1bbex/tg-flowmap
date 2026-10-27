@@ -74,13 +74,19 @@ async def download_media(
             return str(target)
         try:
             result = await client.download_media(msg, file=str(target))
-        except Exception:
+        except BaseException:
             if target.exists():
-                target.unlink()  # не оставляем частичный файл
+                try:
+                    target.unlink()  # не оставляем частичный файл при отмене или ошибке
+                except OSError:
+                    pass
             raise
         if not result:
             if target.exists():
-                target.unlink()
+                try:
+                    target.unlink()
+                except OSError:
+                    pass
             return None
         return str(result)
     except Exception:  # noqa: BLE001 — медиа не критично для обхода

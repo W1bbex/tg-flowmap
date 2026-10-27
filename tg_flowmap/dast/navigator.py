@@ -40,8 +40,6 @@ class EventRouter:
     async def wait_result(self, timeout: float, stabilization: float):
         """(primary(kind, message) | None, extras). После первичного события
         ждёт тишины stabilization секунд (собирая доп. сообщения в виде [(kind, msg), ...])."""
-        import asyncio
-
         primary = None
         extras: list = []
         start = time.monotonic()
@@ -208,12 +206,6 @@ class Navigator:
             self.router.drain()
             if button.button_type == "callback" and button.callback_data is not None:
                 cb, err = await self._press_callback(button, message_id)
-                if err is not None:
-                    duration_ms = int((time.monotonic() - t0) * 1000)
-                    if cb is not None:
-                        cb.duration_ms = duration_ms
-                    await self.logger.finish_action(action_id, self.bot, "error", duration_ms=duration_ms, error=err)
-                    return PressOutcome(kind="error", action_id=action_id, error=err, callback=cb)
             elif button.button_type == "reply" and self.cfg.press_reply_keyboard:
                 await self.client.send_message(self.chat, button.label)
             else:
