@@ -56,6 +56,7 @@ def build_sast_markdown_report(bot_map: BotMap, target_path: Path) -> str:
         f"- **Тупиков (Dead-end):** {stats.get('dead_ends', 0)}",
         f"- **Ошибок эмодзи:** {stats.get('broken_emojis', 0)}",
         f"- **Экранов без кнопки «Назад»:** {stats.get('missing_backs', 0)}",
+        f"- **Скрытых команд (Orphan Commands):** {stats.get('orphan_commands', 0)}",
         "",
         "---",
         "",
@@ -123,6 +124,8 @@ def run_analysis(
         parser.keyboards,
         screen_aliases=parser.screen_aliases,
         hub_return_nodes=parser.hub_return_nodes,
+        registered_commands=parser.registered_menu_commands,
+        has_set_my_commands=parser.has_set_my_commands,
     )
     bot_map = analyzer.build_map()
 
@@ -158,6 +161,7 @@ def run_analysis(
     print(f"Тупиков (Dead-end):{stats.get('dead_ends', 0)}")
     print(f"Ошибок эмодзи:     {stats.get('broken_emojis', 0)}")
     print(f"Без кнопки Назад:  {stats.get('missing_backs', 0)}")
+    print(f"Скрытых команд:    {stats.get('orphan_commands', 0)}")
     print("-" * 60)
 
     if bot_map.issues:
@@ -277,7 +281,14 @@ def _load_target_data(target: str, out_dir: Path) -> dict:
             parser.parse_file(p)
         else:
             parser.parse_dir(p)
-        analyzer = GraphAnalyzer(parser.nodes, parser.keyboards)
+        analyzer = GraphAnalyzer(
+            parser.nodes,
+            parser.keyboards,
+            screen_aliases=parser.screen_aliases,
+            hub_return_nodes=parser.hub_return_nodes,
+            registered_commands=parser.registered_menu_commands,
+            has_set_my_commands=parser.has_set_my_commands,
+        )
         bot_map = analyzer.build_map()
         return {
             "metrics": BotComparator.extract_metrics_from_bot_map(bot_map),

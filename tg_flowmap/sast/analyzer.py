@@ -13,11 +13,15 @@ class GraphAnalyzer:
         keyboards: Dict[str, Keyboard],
         screen_aliases: Optional[Dict[str, str]] = None,
         hub_return_nodes: Optional[Set[str]] = None,
+        registered_commands: Optional[Set[str]] = None,
+        has_set_my_commands: bool = False,
     ):
         self.nodes = nodes
         self.keyboards = keyboards
         self.screen_aliases = screen_aliases or {}
         self.hub_return_nodes = hub_return_nodes or set()
+        self.registered_commands = set(registered_commands) if registered_commands else set()
+        self.has_set_my_commands = has_set_my_commands
         self.edges: List[Edge] = []
         self.issues: List[Issue] = []
 
@@ -251,6 +255,50 @@ class GraphAnalyzer:
                     )
                 )
 
+        # Step 4: Orphan Command Linting (Task #89)
+        if self.has_set_my_commands:
+            handled_commands: Dict[str, MessageNode] = {}
+            for nid, node in self.nodes.items():
+                if nid.startswith("cmd:/") or nid.startswith("cmd:"):
+                    clean = nid.split("cmd:/", 1)[-1] if "cmd:/" in nid else nid.split("cmd:", 1)[-1]
+                    handled_commands[clean.strip().lstrip("/")] = node
+                elif getattr(node, "trigger_type", "") == "command":
+                    clean = getattr(node, "trigger_pattern", "").strip().lstrip("/")
+                    if clean:
+                        handled_commands[clean] = node
+
+                for alias in getattr(node, "aliases", []):
+                    if alias.startswith("/"):
+                        clean_alias = alias.strip().lstrip("/")
+                        if clean_alias not in handled_commands:
+                            handled_commands[clean_alias] = node
+
+            # 4.1 Handled in code, but missing from set_my_commands menu
+            for cmd, node in sorted(handled_commands.items()):
+                if cmd not in self.registered_commands:
+                    self.issues.append(
+                        Issue(
+                            severity="warning",
+                            issue_type="orphan_command",
+                            message=f"Команда /{cmd} объявлена в коде бота, но не зарегистрирована в set_my_commands (скрыта из системного меню Telegram).",
+                            node_id=node.id,
+                            source_file=node.source_file,
+                            line_number=node.line_number,
+                        )
+                    )
+
+            # 4.2 Registered in set_my_commands menu, but no handler in code
+            for reg_cmd in sorted(self.registered_commands):
+                if reg_cmd not in handled_commands:
+                    self.issues.append(
+                        Issue(
+                            severity="error",
+                            issue_type="orphan_command",
+                            message=f"Команда /{reg_cmd} зарегистрирована в set_my_commands, но не имеет обработчика в коде бота (вызовет тупик у пользователя при клике в меню).",
+                            node_id=f"cmd:/{reg_cmd}",
+                        )
+                    )
+
         stats = {
             "total_nodes": len(self.nodes),
             "total_edges": len(self.edges),
@@ -258,6 +306,7 @@ class GraphAnalyzer:
             "dead_ends": sum(1 for i in self.issues if i.issue_type == "dead_end"),
             "broken_emojis": sum(1 for i in self.issues if i.issue_type == "null_emoji"),
             "missing_backs": sum(1 for i in self.issues if i.issue_type == "missing_back"),
+            "orphan_commands": sum(1 for i in self.issues if i.issue_type == "orphan_command"),
             "duplicate_screens": sum(1 for i in self.issues if i.issue_type == "duplicate_screen"),
         }
 

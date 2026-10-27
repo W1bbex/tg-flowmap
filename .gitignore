@@ -21,6 +21,7 @@ venv/
 htmlcov/
 .pytest_cache/
 .pytest_temp/
+.pytest_tmp*/
 output/
 .cache/
 

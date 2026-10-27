@@ -61,6 +61,8 @@ class AstParser:
         self.hub_return_nodes: Set[str] = set()
         self.global_constants: Dict[str, Any] = {}
         self.custom_emoji_ids: Set[str] = set()
+        self.registered_menu_commands: Set[str] = set()
+        self.has_set_my_commands: bool = False
 
     def parse_dir(self, dirpath: Path, recursive: bool = True) -> None:
         """Parses all python files in a directory, ignoring heavy/system and test folders."""
@@ -116,6 +118,7 @@ class AstParser:
 
         for filepath, tree in parsed_trees:
             self._extract_keyboards(tree, filepath)
+            self._extract_set_my_commands(tree, filepath)
 
         # Resolve keyboard aliases
         for alias, target in self.keyboard_aliases.items():
@@ -143,6 +146,7 @@ class AstParser:
 
         self._extract_global_constants(tree)
         self._extract_keyboards(tree, filepath)
+        self._extract_set_my_commands(tree, filepath)
         for alias, target in self.keyboard_aliases.items():
             if target in self.keyboards and alias not in self.keyboards:
                 self.keyboards[alias] = self.keyboards[target]
@@ -1202,3 +1206,79 @@ class AstParser:
                             inline_kb=inline_kb,
                         )
 
+
+    def _extract_set_my_commands(self, tree: ast.AST, filepath: Path) -> None:
+        """Extracts bot commands registered in set_my_commands / setMyCommands calls."""
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+
+            func_name = getattr(node.func, "attr", None) or getattr(node.func, "id", "")
+            if func_name not in ("set_my_commands", "setMyCommands"):
+                continue
+
+            self.has_set_my_commands = True
+            commands_node = None
+
+            for kw in node.keywords:
+                if kw.arg in ("commands", "custom_commands"):
+                    commands_node = kw.value
+                    break
+
+            if commands_node is None and node.args:
+                commands_node = node.args[0]
+
+            if commands_node is None:
+                continue
+
+            self._parse_commands_list(commands_node, tree)
+
+    def _parse_commands_list(self, node: ast.AST, tree: Optional[ast.AST] = None) -> None:
+        """Parses a list/tuple of BotCommand objects or variable reference."""
+        if isinstance(node, (ast.List, ast.Tuple)):
+            for elt in node.elts:
+                cmd_name = self._extract_single_bot_command(elt)
+                if cmd_name:
+                    self.registered_menu_commands.add(str(cmd_name).strip().lstrip("/"))
+        elif isinstance(node, ast.Name):
+            var_val = self.global_constants.get(node.id)
+            if isinstance(var_val, list):
+                for item in var_val:
+                    if isinstance(item, str):
+                        self.registered_menu_commands.add(item.strip().lstrip("/"))
+                    elif isinstance(item, dict) and "command" in item:
+                        self.registered_menu_commands.add(str(item["command"]).strip().lstrip("/"))
+            elif tree is not None:
+                for n in ast.walk(tree):
+                    if isinstance(n, (ast.Assign, ast.AnnAssign)):
+                        targets = n.targets if isinstance(n, ast.Assign) else [n.target]
+                        for t in targets:
+                            if isinstance(t, ast.Name) and t.id == node.id and n.value:
+                                self._parse_commands_list(n.value, tree)
+                                return
+
+    def _extract_single_bot_command(self, elt: ast.AST) -> Optional[str]:
+        """Extracts command name from BotCommand call, dict, tuple or constant."""
+        if isinstance(elt, ast.Call):
+            for kw in elt.keywords:
+                if kw.arg in ("command", "cmd"):
+                    val = _ast_to_value(kw.value, {}, self.global_constants)
+                    if val is not None:
+                        return str(val)
+            if elt.args:
+                val = _ast_to_value(elt.args[0], {}, self.global_constants)
+                if val is not None:
+                    return str(val)
+        elif isinstance(elt, ast.Dict):
+            for k, v in zip(elt.keys, elt.values):
+                if isinstance(k, ast.Constant) and k.value in ("command", "cmd"):
+                    val = _ast_to_value(v, {}, self.global_constants)
+                    if val is not None:
+                        return str(val)
+        elif isinstance(elt, (ast.Tuple, ast.List)) and elt.elts:
+            val = _ast_to_value(elt.elts[0], {}, self.global_constants)
+            if val is not None:
+                return str(val)
+        elif isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+            return elt.value
+        return None
