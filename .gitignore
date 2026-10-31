@@ -25,3 +25,8 @@ htmlcov/
 output/
 .cache/
 
+# Internal agent docs & audit reports
+CRITIQUE_REPORT*.md
+PROJECT.md
+ARCHITECTURE.md
+
