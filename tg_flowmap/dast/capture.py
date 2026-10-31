@@ -183,7 +183,7 @@ def extract_buttons(reply_markup, message_id: int | None) -> list[ButtonRef]:
             requires_password = bool(getattr(btn, "requires_password", False))
             out.append(ButtonRef(
                 row=ri, col=ci, label=label, button_type=btype,
-                callback_data=bytes(data) if data else None,
+                callback_data=bytes(data) if data is not None else None,
                 url=getattr(btn, "url", None),
                 custom_emoji_id=custom_emoji_id or (
                     str(style_icon) if style_icon else None),

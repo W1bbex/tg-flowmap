@@ -30,16 +30,18 @@ def get_default_cache_dir() -> Path:
 
 def load_cached_emoji(emoji_id: str, cache_dir: Path) -> Optional[str]:
     """Loads a cached emoji file as a base64 Data URL if it exists."""
+    if not emoji_id or not emoji_id.isdigit():
+        return None
     for ext in (".webp", ".png", ".jpg", ".svg"):
-        cached_file = cache_dir / f"{emoji_id}{ext}"
-        if cached_file.exists():
-            try:
+        try:
+            cached_file = cache_dir / f"{emoji_id}{ext}"
+            if cached_file.exists():
                 raw_bytes = cached_file.read_bytes()
                 mime = "image/svg+xml" if ext == ".svg" else f"image/{ext.lstrip('.')}"
                 b64 = base64.b64encode(raw_bytes).decode("ascii")
                 return f"data:{mime};base64,{b64}"
-            except Exception:
-                pass
+        except Exception:
+            pass
     return None
 
 
@@ -79,7 +81,9 @@ def fetch_custom_emojis(
 
     ctx = ssl.create_default_context()
 
-    missing_list = list(missing_ids)
+    missing_list = [eid for eid in missing_ids if eid.isdigit()]
+    if not missing_list:
+        return result_map
     batches = [missing_list[i : i + 100] for i in range(0, len(missing_list), 100)]
 
     for batch in batches:

@@ -223,7 +223,7 @@ def run_telegram_config_wizard(cfg_path: Path) -> bool:
 
         try:
             if sys.platform == "win32":
-                os.startfile(cfg_file)
+                os.startfile(cfg_path)
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", str(cfg_path)])
             else:
@@ -478,6 +478,8 @@ def handle_config_action() -> None:
             shutil.copy(SCRIPT_DIR / "config.example.json", cfg_file)
         if sys.platform == "win32":
             os.startfile(cfg_file)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(cfg_file)])
         else:
             subprocess.Popen(["xdg-open", str(cfg_file)])
     elif action == "reset":

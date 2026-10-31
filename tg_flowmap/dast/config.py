@@ -163,7 +163,14 @@ class Config:
 
     # ---- (де)сериализация --------------------------------------------------
     def to_dict(self) -> dict:
-        d = {f.name: getattr(self, f.name) for f in fields(self) if f.name != "root"}
+        d = {}
+        for f in fields(self):
+            if f.name == "root":
+                continue
+            val = getattr(self, f.name)
+            if isinstance(val, Path):
+                val = str(val)
+            d[f.name] = val
         return d
 
     def save(self, path: Path | None = None) -> None:

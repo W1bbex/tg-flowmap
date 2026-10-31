@@ -95,8 +95,8 @@ def buttons_signature(buttons: list[dict | Any]) -> list[list]:
         else:
             b_dict = getattr(b, "__dict__", {})
 
-        row = int(b_dict.get("row", 0))
-        col = int(b_dict.get("col", 0))
+        row = int(b_dict.get("row") or 0)
+        col = int(b_dict.get("col") or 0)
         label = normalize_text(str(b_dict.get("label", "")))
         b_type = str(b_dict.get("button_type", ""))
         url = b_dict.get("url")
@@ -119,7 +119,10 @@ def buttons_signature(buttons: list[dict | Any]) -> list[list]:
             icon_id,
             req_pwd,
         ])
-    return [sorted(items) for _, items in sorted(rows.items())]
+    return [
+        sorted(items, key=lambda x: (x[0], x[1], x[2], str(x[3] or ""), x[4], x[5], x[6], x[7], x[8]))
+        for _, items in sorted(rows.items())
+    ]
 
 
 def media_signature(media: list[dict | Any]) -> list[list]:
@@ -215,8 +218,8 @@ def match_button_instance(
     if not instances:
         return None, 0.0, "no_instances_available"
 
-    a_row = int(_extract_field(action, "row", 0))
-    a_col = int(_extract_field(action, "col", 0))
+    a_row = int(_extract_field(action, "row", 0) or 0)
+    a_col = int(_extract_field(action, "col", 0) or 0)
     a_label = normalize_text(str(_extract_field(action, "label", "")))
     a_type = str(_extract_field(action, "button_type", ""))
     a_icon = str(_extract_field(action, "style_icon_id", "") or "")
@@ -224,8 +227,8 @@ def match_button_instance(
     # 1. Попытка точного позиционного совпадения
     exact_matches = []
     for inst in instances:
-        i_row = int(_extract_field(inst, "row", 0))
-        i_col = int(_extract_field(inst, "col", 0))
+        i_row = int(_extract_field(inst, "row", 0) or 0)
+        i_col = int(_extract_field(inst, "col", 0) or 0)
         i_label = normalize_text(str(_extract_field(inst, "label", "")))
         i_type = str(_extract_field(inst, "button_type", ""))
         i_icon = str(_extract_field(inst, "style_icon_id", "") or "")

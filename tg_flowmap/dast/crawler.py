@@ -561,6 +561,7 @@ class BotCrawler:
                 "action": act.get("label", "") or action_id,
                 "button_fp": act.get("button_fp", "") or action_id,
                 "step_type": act.get("button_type", "callback"),
+                "button_type": act.get("button_type", "callback"),
                 "row": act.get("row"),
                 "col": act.get("col"),
                 "label": act.get("label", ""),
@@ -1015,3 +1016,4 @@ class BotCrawler:
             self.state.add_transition(
                 self.bot, screen_id, ref.screen_id, masked, "manual_answer",
                 outcome.kind, None, route_id, None, rowid)
+            self._set_position(ref.screen_id, outcome.message, rowid)

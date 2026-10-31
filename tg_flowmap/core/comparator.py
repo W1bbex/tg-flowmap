@@ -48,9 +48,10 @@ class BotComparator:
             nodes = bot_map.get("nodes", {})
             issues = bot_map.get("issues", [])
             screens_count = len(nodes)
+            node_iterable = nodes.values() if isinstance(nodes, dict) else (nodes if isinstance(nodes, list) else [])
             buttons_count = sum(
                 sum(len(row) for row in (n.get("keyboard") or {}).get("rows", []))
-                for n in nodes.values()
+                for n in node_iterable
                 if isinstance(n, dict)
             )
             dead_ends = sum(1 for iss in issues if iss.get("issue_type") == "dead_end")

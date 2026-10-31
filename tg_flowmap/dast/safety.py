@@ -13,7 +13,7 @@ from .config import Config
 
 WALLET_REGEXES = [
     re.compile(r"0x[0-9a-fA-F]{40}"),
-    re.compile(r"\bT[1-9A-HJ-NP-Za-km-z]{33}\b", re.IGNORECASE),        # TRON / USDT TRC20
+    re.compile(r"\bT[1-9A-HJ-NP-Za-km-z]{33}\b"),        # TRON / USDT TRC20
     re.compile(r"\bbc1[a-z0-9]{20,60}\b", re.IGNORECASE),               # Bitcoin bech32
     re.compile(r"\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b", re.IGNORECASE),  # Bitcoin legacy
     re.compile(r"\b[EU]Q[0-9a-zA-Z_-]{46}\b"),                          # TON / Telegram Open Network
@@ -241,7 +241,14 @@ class SafetyFilter:
     # -------------------------------------------------------- manual answers
     @staticmethod
     def manual_answer(manual_answers: dict, bot: str, screen_text: str) -> str | None:
-        bot_cfg = manual_answers.get(bot) or manual_answers.get(bot.lower())
+        bot_cfg = (
+            manual_answers.get(bot)
+            or manual_answers.get(bot.lower())
+            or manual_answers.get(bot.lstrip("@"))
+            or manual_answers.get(bot.lstrip("@").lower())
+            or manual_answers.get(f"@{bot.lstrip('@')}")
+            or manual_answers.get(f"@{bot.lstrip('@')}".lower())
+        )
         if not bot_cfg:
             return None
         for entry in bot_cfg.get("screens", []):

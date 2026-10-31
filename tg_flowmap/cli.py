@@ -306,7 +306,8 @@ def _load_target_data(target: str, out_dir: Path) -> dict:
     if cand.exists():
         try:
             graph_data = json.loads(cand.read_text(encoding="utf-8"))
-            nodes = graph_data.get("nodes") or graph_data.get("screens") or []
+            nodes_data = graph_data.get("nodes") or graph_data.get("screens") or []
+            nodes = list(nodes_data.values()) if isinstance(nodes_data, dict) else (nodes_data if isinstance(nodes_data, list) else [])
             edges = graph_data.get("edges") or []
             total_buttons = sum(len(n.get("buttons", [])) for n in nodes)
             screens_list = [
