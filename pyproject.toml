@@ -15,7 +15,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dast = [
-    "telethon>=1.36,<2",
+    "telethon>=1.36,<1.45",
 ]
 cli = [
     "rich>=13.0",

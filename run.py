@@ -32,23 +32,22 @@ try:
 
     HAS_RICH_UI = True
     console = Console(legacy_windows=False)
+    CUSTOM_STYLE = Style([
+        ("qmark", "fg:#00d7d7 bold"),
+        ("question", "bold"),
+        ("answer", "fg:#00ff88 bold"),
+        ("pointer", "fg:#00d7d7 bold"),
+        ("highlighted", "fg:#00d7d7 bold"),
+        ("selected", "fg:#00ff88"),
+        ("separator", "fg:#555555"),
+        ("instruction", "fg:#777777 italic"),
+        ("text", ""),
+        ("disabled", "fg:#555555 italic"),
+    ])
 except ImportError:
     HAS_RICH_UI = False
     console = None
-
-# Minimalist, clean styling for Questionary prompt
-CUSTOM_STYLE = Style([
-    ("qmark", "fg:#00d7d7 bold"),
-    ("question", "bold"),
-    ("answer", "fg:#00ff88 bold"),
-    ("pointer", "fg:#00d7d7 bold"),
-    ("highlighted", "fg:#00d7d7 bold"),
-    ("selected", "fg:#00ff88"),
-    ("separator", "fg:#555555"),
-    ("instruction", "fg:#777777 italic"),
-    ("text", ""),
-    ("disabled", "fg:#555555 italic"),
-]) if HAS_RICH_UI else None
+    CUSTOM_STYLE = None
 
 
 def is_interactive() -> bool:
