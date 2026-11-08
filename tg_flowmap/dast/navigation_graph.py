@@ -158,6 +158,8 @@ class NavigationGraph:
             for e in existing_for_action:
                 e.is_stable = False
                 e.confidence = min(e.confidence, 0.5)
+                if self.state is not None:
+                    self.state.upsert_graph_edge(self.bot, e.to_dict())
             edge.is_stable = False
             edge.confidence = min(edge.confidence, 0.5)
 

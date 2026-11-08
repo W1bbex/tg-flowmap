@@ -60,17 +60,25 @@ def clean_input_path(raw: str) -> Path | None:
     text = raw.strip().strip('"').strip("'")
     if not text:
         return None
-    p = Path(text).expanduser()
-    if p.exists():
-        return p.resolve()
-    # Check relative to current working directory
-    cwd_p = (Path.cwd() / text).resolve()
-    if cwd_p.exists():
-        return cwd_p
-    # Check relative to script dir
-    script_p = (SCRIPT_DIR / text).resolve()
-    if script_p.exists():
-        return script_p
+
+    def _safe_exists(candidate: Path) -> bool:
+        try:
+            return candidate.exists()
+        except OSError:
+            return False
+
+    try:
+        p = Path(text).expanduser()
+        if _safe_exists(p):
+            return p.resolve()
+        cwd_p = (Path.cwd() / text).resolve()
+        if _safe_exists(cwd_p):
+            return cwd_p
+        script_p = (SCRIPT_DIR / text).resolve()
+        if _safe_exists(script_p):
+            return script_p
+    except OSError:
+        return None
     return None
 
 

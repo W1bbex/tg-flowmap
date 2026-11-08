@@ -32,12 +32,19 @@ def load_cached_emoji(emoji_id: str, cache_dir: Path) -> Optional[str]:
     """Loads a cached emoji file as a base64 Data URL if it exists."""
     if not emoji_id or not emoji_id.isdigit():
         return None
-    for ext in (".webp", ".png", ".jpg", ".svg"):
+    for ext in (".webp", ".png", ".jpg", ".svg", ".tgs", ".webm"):
         try:
             cached_file = cache_dir / f"{emoji_id}{ext}"
             if cached_file.exists():
                 raw_bytes = cached_file.read_bytes()
-                mime = "image/svg+xml" if ext == ".svg" else f"image/{ext.lstrip('.')}"
+                if ext == ".svg":
+                    mime = "image/svg+xml"
+                elif ext == ".tgs":
+                    mime = "application/x-tgsticker"
+                elif ext == ".webm":
+                    mime = "video/webm"
+                else:
+                    mime = f"image/{ext.lstrip('.')}"
                 b64 = base64.b64encode(raw_bytes).decode("ascii")
                 return f"data:{mime};base64,{b64}"
         except Exception:

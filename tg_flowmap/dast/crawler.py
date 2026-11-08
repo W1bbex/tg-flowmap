@@ -13,7 +13,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 from typing import Any
 
 from .capture import capture_message, extract_buttons
@@ -124,6 +128,17 @@ class BotCrawler:
                     self.state.set_bot_status(self.bot, "error", "нет ответа на /start")
                     return "error"
             await self._loop()
+            if self.stopped:
+                status = "paused"
+            elif self.state.frontier_active_count(self.bot) > 0:
+                status = "paused"
+            else:
+                status = "done"
+            self.state.set_bot_status(self.bot, status)
+            return status
+        except asyncio.CancelledError:
+            self.state.set_bot_status(self.bot, "paused", "cancelled")
+            raise
         except AbortScan as e:
             if e.reason == "max_actions_per_bot reached":
                 status = (
@@ -141,12 +156,10 @@ class BotCrawler:
             self.state.errors_add(self.bot, "crash", f"{type(e).__name__}: {e}")
             self.state.set_bot_status(self.bot, "error", str(e))
             return "error"
-        if self.stopped:
-            status = "paused"
-        elif status == "done" and self.state.frontier_active_count(self.bot) > 0:
-            status = "paused"
-        self.state.set_bot_status(self.bot, status)
-        return status
+        finally:
+            info = self.state.bot_info(self.bot)
+            if info and info.get("status") == "running":
+                self.state.set_bot_status(self.bot, "paused" if self.stopped else "error", "interrupted")
 
     def stop(self) -> None:
         self.stopped = True
@@ -676,51 +689,53 @@ class BotCrawler:
                     cur_instances = self.state.button_instances_for_screen(self.bot, self._current_screen_id)
 
                 matched_inst, conf, _ = match_button_instance(back_btn, cur_instances)
-                btn_to_press = back_btn
                 if matched_inst is not None and conf >= 0.8:
                     btn_to_press = self.executor._to_button_ref(matched_inst, self._current_msg.id)
-
-                outcome = await self.navigator.press_button(btn_to_press, self._current_msg.id)
-                self._bump_action()
-                if outcome.message is not None:
-                    ref, _, rowid = await self._observe(
-                        outcome.message, _outcome_event_type(outcome.kind),
-                        target["depth_min"], None, [], None, None,
-                        create_route=False)
-                    # Регистрируем наблюдавшийся переход с каноничным action_id
-                    act_candidates = self.state.actions_for_screen(self.bot, self._current_screen_id)
-                    matched_act = next(
-                        (a for a in act_candidates if a["row"] == back_btn.row and a["col"] == back_btn.col),
-                        None,
-                    )
-                    rec_action_id = matched_act["action_id"] if matched_act else (btn_to_press.button_fp or "act_back")
-                    self.graph.record_transition(
-                        self._current_screen_id,
-                        rec_action_id,
-                        ref.screen_id,
-                        outcome.kind,
-                        success=True,
-                    )
-                    self._set_position(ref.screen_id, outcome.message, rowid)
-                    if ref.fingerprint == target["fingerprint"]:
-                        self.metrics.successful_local_returns += 1
-                        self.metrics.avoided_replays += 1
-                        self.metrics.estimated_actions_saved += max(0, len(path) + 1 - 1)
-                        self.state.metric_incr(self.bot, "successful_local_returns", 1)
-                        self.state.metric_incr(self.bot, "avoided_replays", 1)
-                        return True
-
-                    # Если после Back оказались на промежуточном экране (например, Catalog),
-                    # проверяем, знает ли граф путь отсюда до target_screen_id
-                    next_path = self.graph.find_shortest_path(ref.screen_id, target_screen_id, min_confidence=0.2)
-                    if next_path is not None and 0 < len(next_path) <= self.cfg.recovery_start_cost:
-                        ok_next = await self._execute_local_path(next_path)
-                        if ok_next and self._current_screen_id == target_screen_id:
+                    outcome = await self.navigator.press_button(btn_to_press, self._current_msg.id)
+                    self._bump_action()
+                    if outcome.message is not None:
+                        ref, _, rowid = await self._observe(
+                            outcome.message, _outcome_event_type(outcome.kind),
+                            target["depth_min"], None, [], None, None,
+                            create_route=False)
+                        # Регистрируем наблюдавшийся переход с каноничным action_id
+                        act_candidates = self.state.actions_for_screen(self.bot, self._current_screen_id)
+                        matched_act = next(
+                            (a for a in act_candidates if a["row"] == back_btn.row and a["col"] == back_btn.col),
+                            None,
+                        )
+                        rec_action_id = matched_act["action_id"] if matched_act else (btn_to_press.button_fp or "act_back")
+                        self.graph.record_transition(
+                            self._current_screen_id,
+                            rec_action_id,
+                            ref.screen_id,
+                            outcome.kind,
+                            success=True,
+                        )
+                        self._set_position(ref.screen_id, outcome.message, rowid)
+                        if ref.fingerprint == target["fingerprint"]:
                             self.metrics.successful_local_returns += 1
                             self.metrics.avoided_replays += 1
+                            self.metrics.estimated_actions_saved += max(0, len(path) + 1 - 1)
                             self.state.metric_incr(self.bot, "successful_local_returns", 1)
                             self.state.metric_incr(self.bot, "avoided_replays", 1)
                             return True
+
+                        # Если после Back оказались на промежуточном экране (например, Catalog),
+                        # проверяем, знает ли граф путь отсюда до target_screen_id
+                        next_path = self.graph.find_shortest_path(ref.screen_id, target_screen_id, min_confidence=0.2)
+                        if next_path is not None and 0 < len(next_path) <= self.cfg.recovery_start_cost:
+                            ok_next = await self._execute_local_path(next_path)
+                            if ok_next and self._current_screen_id == target_screen_id:
+                                self.metrics.successful_local_returns += 1
+                                self.metrics.avoided_replays += 1
+                                self.state.metric_incr(self.bot, "successful_local_returns", 1)
+                                self.state.metric_incr(self.bot, "avoided_replays", 1)
+                                return True
+                else:
+                    logger.warning(
+                        f"Пропуск возврата по кнопке {back_btn.label!r}: актуальный экземпляр не найден или низкая уверенность ({conf:.2f} < 0.8)"
+                    )
 
         # 3) Полный replay: /start + путь
         self.metrics.recovery_start_count += 1
@@ -759,10 +774,19 @@ class BotCrawler:
                 cur_instances = self.state.button_instances_for_screen(self.bot, screen_id)
 
             matched_inst, conf, _ = match_button_instance(b, cur_instances)
-            btn_to_press = b
-            if matched_inst is not None and conf >= 0.8:
-                btn_to_press = self.executor._to_button_ref(matched_inst, self._current_msg.id)
-                btn_to_press.db_id = b.db_id
+            if matched_inst is None or conf < 0.8:
+                logger.warning(
+                    f"Пропуск нажатия кнопки {b.label!r}: актуальный экземпляр не найден или низкая уверенность ({conf:.2f} < 0.8)"
+                )
+                self.state.errors_add(
+                    self.bot,
+                    "stale_button",
+                    f"Кнопка {b.label!r} не найдена на актуальном экране (confidence={conf:.2f})",
+                )
+                self._bump_errors()
+                continue
+            btn_to_press = self.executor._to_button_ref(matched_inst, self._current_msg.id)
+            btn_to_press.db_id = b.db_id
 
             outcome = await self.navigator.press_button(btn_to_press, self._current_msg.id)
             await self._record_press(btn_to_press, item, outcome, depth)
@@ -843,11 +867,12 @@ class BotCrawler:
                 outcome.callback)
 
         # Синхронизируем graph edge и mark_action_explored
-        if to_screen_id:
+        dst_screen = to_screen_id or (item["screen_id"] if outcome.kind == "answer_only" else None)
+        if dst_screen:
             self.graph.record_transition(
                 source_screen_id=item["screen_id"],
                 action_id=act_id,
-                destination_screen_id=to_screen_id,
+                destination_screen_id=dst_screen,
                 result_type=outcome.kind,
                 success=(outcome.kind in ("edit", "new", "answer_only")),
             )

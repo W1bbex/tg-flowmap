@@ -63,6 +63,7 @@ class AstParser:
         self.custom_emoji_ids: Set[str] = set()
         self.registered_menu_commands: Set[str] = set()
         self.has_set_my_commands: bool = False
+        self.skipped_files: List[Tuple[Path, str]] = []
 
     def parse_dir(self, dirpath: Path, recursive: bool = True) -> None:
         """Parses all python files in a directory, ignoring heavy/system and test folders."""
@@ -113,7 +114,8 @@ class AstParser:
                 tree = ast.parse(content, filename=str(filepath))
                 parsed_trees.append((filepath, tree))
                 self._extract_global_constants(tree)
-            except (SyntaxError, UnicodeDecodeError):
+            except (SyntaxError, UnicodeDecodeError) as e:
+                self.skipped_files.append((filepath, f"{type(e).__name__}: {e}"))
                 continue
 
         for filepath, tree in parsed_trees:
@@ -141,7 +143,8 @@ class AstParser:
 
         try:
             tree = ast.parse(content, filename=str(filepath))
-        except SyntaxError:
+        except SyntaxError as e:
+            self.skipped_files.append((filepath, f"SyntaxError: {e}"))
             return
 
         self._extract_global_constants(tree)
@@ -652,10 +655,17 @@ class AstParser:
 
             text = str(text_val or "Button")
             cb = str(cb_val) if cb_val is not None else None
+            web_app_val = kwargs.get("web_app")
+            switch_inline_val = kwargs.get("switch_inline_query") or kwargs.get("switch_inline_query_current_chat")
+            pay_val = bool(kwargs.get("pay")) if "pay" in kwargs else None
+
             return Button(
                 text=text,
                 callback_data=cb,
                 url=str(kwargs.get("url", "")) if kwargs.get("url") else None,
+                web_app=str(web_app_val) if web_app_val else None,
+                switch_inline_query=str(switch_inline_val) if switch_inline_val else None,
+                pay=pay_val,
                 icon_custom_emoji_id=str(icon_emoji) if icon_emoji is not None else None,
                 style=str(style_val) if style_val else None,
                 line_number=getattr(elt_node, "lineno", None),
@@ -1135,10 +1145,13 @@ class AstParser:
             # 1. Callback query handlers
             if "callback" in dec_low:
                 routes: List[str] = []
-                for m in re.finditer(r'F\.data\s*==\s*["\']([\w:-]+)["\']', dec_str):
+                for m in re.finditer(r'F\.data\s*==\s*["\']([^"\']+)["\']', dec_str):
                     routes.append(m.group(1))
-                for m in re.finditer(r'F\.data\.startswith\(\s*["\']([\w:-]+)["\']', dec_str):
+                for m in re.finditer(r'F\.data\.startswith\(\s*["\']([^"\']+)["\']', dec_str):
                     routes.append(f"{m.group(1)}*")
+                for m in re.finditer(r'F\.data\.in_\(\s*\[([^\]]+)\]\s*\)', dec_str):
+                    for item in re.finditer(r'["\']([\w:-]+)["\']', m.group(1)):
+                        routes.append(item.group(1))
                 for m in re.finditer(r'(\w+Callback\w*)\.filter\(([^)]*)\)', dec_str):
                     factory_name = m.group(1)
                     filter_body = m.group(2)
@@ -1233,7 +1246,7 @@ class AstParser:
 
             self._parse_commands_list(commands_node, tree)
 
-    def _parse_commands_list(self, node: ast.AST, tree: Optional[ast.AST] = None) -> None:
+    def _parse_commands_list(self, node: ast.AST, tree: Optional[ast.AST] = None, visited_names: Optional[set] = None) -> None:
         """Parses a list/tuple of BotCommand objects or variable reference."""
         if isinstance(node, (ast.List, ast.Tuple)):
             for elt in node.elts:
@@ -1249,12 +1262,17 @@ class AstParser:
                     elif isinstance(item, dict) and "command" in item:
                         self.registered_menu_commands.add(str(item["command"]).strip().lstrip("/"))
             elif tree is not None:
+                if visited_names is None:
+                    visited_names = set()
+                if node.id in visited_names:
+                    return
+                visited_names.add(node.id)
                 for n in ast.walk(tree):
                     if isinstance(n, (ast.Assign, ast.AnnAssign)):
                         targets = n.targets if isinstance(n, ast.Assign) else [n.target]
                         for t in targets:
                             if isinstance(t, ast.Name) and t.id == node.id and n.value:
-                                self._parse_commands_list(n.value, tree)
+                                self._parse_commands_list(n.value, tree, visited_names=visited_names)
                                 return
 
     def _extract_single_bot_command(self, elt: ast.AST) -> Optional[str]:

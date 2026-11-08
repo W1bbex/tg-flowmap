@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 def utf16_length(s: str) -> int:
-    return len(s.encode("utf-16-le")) // 2
+    return len(s.encode("utf-16-le", errors="surrogatepass")) // 2
 
 
 def char_index_for_utf16(text: str, u16_index: int) -> int:

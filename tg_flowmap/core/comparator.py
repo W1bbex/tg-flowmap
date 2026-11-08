@@ -68,12 +68,13 @@ class BotComparator:
     @staticmethod
     def extract_metrics_from_dast(dast_summary: Dict[str, Any]) -> Dict[str, Any]:
         """Extracts normalized metrics from DAST scan result or state summary."""
+        summary = dast_summary.get("summary", dast_summary) if isinstance(dast_summary, dict) else {}
         return {
-            "screens_count": dast_summary.get("screens_count", dast_summary.get("total_screens", 0)),
-            "buttons_count": dast_summary.get("buttons_count", dast_summary.get("total_buttons", 0)),
-            "dead_ends": dast_summary.get("dead_ends", 0),
-            "missing_back": dast_summary.get("missing_back", 0),
-            "max_depth": dast_summary.get("max_depth", 8),
+            "screens_count": summary.get("screens_count", summary.get("total_screens", summary.get("screens", 0))),
+            "buttons_count": summary.get("buttons_count", summary.get("total_buttons", summary.get("buttons", 0))),
+            "dead_ends": summary.get("dead_ends", 0),
+            "missing_back": summary.get("missing_back", 0),
+            "max_depth": summary.get("max_depth", 8),
         }
 
     def _resolve_metrics(self) -> tuple[Dict[str, Any], Dict[str, Any]]:
@@ -81,6 +82,8 @@ class BotComparator:
             if isinstance(data, dict):
                 if "metrics" in data and isinstance(data["metrics"], dict):
                     return data["metrics"]
+                if "summary" in data:
+                    return self.extract_metrics_from_dast(data["summary"])
                 if "nodes" in data:
                     return self.extract_metrics_from_bot_map(data)
                 return self.extract_metrics_from_dast(data)
@@ -146,8 +149,8 @@ class BotComparator:
         comp_text = self.build_comparison_markdown()
         comparison_path.write_text(comp_text, encoding="utf-8")
 
-        screens_a = self.bot_a_data.get("screens") if isinstance(self.bot_a_data, dict) else None
-        screens_b = self.bot_b_data.get("screens") if isinstance(self.bot_b_data, dict) else None
+        screens_a = (self.bot_a_data.get("screens") or self.bot_a_data.get("nodes")) if isinstance(self.bot_a_data, dict) else None
+        screens_b = (self.bot_b_data.get("screens") or self.bot_b_data.get("nodes")) if isinstance(self.bot_b_data, dict) else None
 
         prompt_text = generate_llm_benchmark_prompt(
             bot_a_name=self.bot_a_name,

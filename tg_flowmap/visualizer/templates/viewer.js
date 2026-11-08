@@ -914,7 +914,7 @@ const ICON_SYMBOLS = {
             let iconHtml = "";
             const customEmojiUrl = (rawData.custom_emojis && btn.icon_custom_emoji_id && rawData.custom_emojis[btn.icon_custom_emoji_id]);
             if (customEmojiUrl) {
-              iconHtml = `<img class="tg-premium-emoji" src="${customEmojiUrl}" alt="icon" />`;
+              iconHtml = `<img class="tg-premium-emoji" src="${escapeHtml(customEmojiUrl)}" alt="icon" />`;
             } else if (btn.icon_custom_emoji_id && ICON_SYMBOLS[btn.icon_custom_emoji_id]) {
               iconHtml = `<span>${ICON_SYMBOLS[btn.icon_custom_emoji_id]} </span>`;
             } else {

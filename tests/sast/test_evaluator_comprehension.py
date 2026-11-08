@@ -1,4 +1,4 @@
-"""Регрессионные тесты исправлений аудита (Round 5):
+"""Регрессионные тесты парсера и вычислений AST:
 - Унарный оператор 'not' в evaluate_ast_node
 - Защита от TypeError (unhashable types) при обращении к dict.get и Subscript
 - aiogram 3 CallbackData с методом .pack()

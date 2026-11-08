@@ -636,6 +636,7 @@ class State:
                     ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?)
                     ON CONFLICT(bot, source_screen_id, row, col, label_norm, button_type)
                     DO UPDATE SET
+                        action_id=excluded.action_id,
                         blocked_reason=excluded.blocked_reason,
                         style_icon_id=excluded.style_icon_id,
                         style_bg_primary=excluded.style_bg_primary,
@@ -757,14 +758,14 @@ class State:
                 edge["source_screen_id"],
                 edge["action_id"],
                 edge["destination_screen_id"],
-                edge.get("result_type", "edit"),
-                int(edge.get("observations_count", 1)),
-                int(edge.get("success_count", 1)),
-                int(edge.get("failure_count", 0)),
-                float(edge.get("confidence", 1.0)),
-                int(edge.get("is_stable", 1)),
-                edge.get("first_observed_at", utcnow()),
-                edge.get("last_observed_at", utcnow()),
+                edge.get("result_type") or "edit",
+                int(edge["observations_count"]) if edge.get("observations_count") is not None else 1,
+                int(edge["success_count"]) if edge.get("success_count") is not None else 1,
+                int(edge["failure_count"]) if edge.get("failure_count") is not None else 0,
+                float(edge["confidence"]) if edge.get("confidence") is not None else 1.0,
+                int(edge["is_stable"]) if edge.get("is_stable") is not None else 1,
+                edge.get("first_observed_at") or utcnow(),
+                edge.get("last_observed_at") or utcnow(),
                 edge.get("last_success_at"),
             ),
         )

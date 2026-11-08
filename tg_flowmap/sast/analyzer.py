@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 from tg_flowmap.core.models import BotMap, Button, Edge, Issue, Keyboard, MessageNode
@@ -15,6 +16,7 @@ class GraphAnalyzer:
         hub_return_nodes: Optional[Set[str]] = None,
         registered_commands: Optional[Set[str]] = None,
         has_set_my_commands: bool = False,
+        skipped_files: Optional[List[Tuple[Path, str]]] = None,
     ):
         self.nodes = nodes
         self.keyboards = keyboards
@@ -22,12 +24,24 @@ class GraphAnalyzer:
         self.hub_return_nodes = hub_return_nodes or set()
         self.registered_commands = set(registered_commands) if registered_commands else set()
         self.has_set_my_commands = has_set_my_commands
+        self.skipped_files = skipped_files or []
         self.edges: List[Edge] = []
         self.issues: List[Issue] = []
 
     def build_map(self) -> BotMap:
         self.edges.clear()
         self.issues.clear()
+
+        if self.skipped_files:
+            for filepath, err in self.skipped_files:
+                self.issues.append(
+                    Issue(
+                        severity="warning",
+                        issue_type="syntax_error",
+                        message=f"Файл пропущен из-за ошибки: {err}",
+                        source_file=str(filepath),
+                    )
+                )
 
         # Step 1: Resolve edges from buttons to destination nodes
         root_keyboards = set()
@@ -427,6 +441,10 @@ class GraphAnalyzer:
                 return "cmd:/start", "ok"
             if "cmd:/menu" in self.nodes:
                 return "cmd:/menu", "ok"
+
+        # Dynamic variable callback (e.g. $var, $action_name)
+        if cb.startswith("$"):
+            return f"dynamic:{cb}", "dynamic"
 
         # Dead end
         return f"unresolved:{cb}", "dead_end"

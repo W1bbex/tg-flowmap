@@ -119,6 +119,11 @@ def run_analysis(
         else:
             parser.parse_dir(target_path)
 
+    if parser.skipped_files:
+        print(f"⚠️ Предупреждение: пропущено файлов из-за синтаксических ошибок: {len(parser.skipped_files)}", file=sys.stderr)
+        for sp, err in parser.skipped_files:
+            print(f"   - {sp.name}: {err}", file=sys.stderr)
+
     analyzer = GraphAnalyzer(
         parser.nodes,
         parser.keyboards,
@@ -126,6 +131,7 @@ def run_analysis(
         hub_return_nodes=parser.hub_return_nodes,
         registered_commands=parser.registered_menu_commands,
         has_set_my_commands=parser.has_set_my_commands,
+        skipped_files=parser.skipped_files,
     )
     bot_map = analyzer.build_map()
 
@@ -262,8 +268,10 @@ def run_dast_scan(
         return 1
 
     state = State(cfg.db_path)
-    reports = generate_reports(cfg, state, bot_name)
-    state.close()
+    try:
+        reports = generate_reports(cfg, state, bot_name)
+    finally:
+        state.close()
 
     print(f"\n✅ Обход завершён!")
     if reports.get("report"):
@@ -288,6 +296,7 @@ def _load_target_data(target: str, out_dir: Path) -> dict:
             hub_return_nodes=parser.hub_return_nodes,
             registered_commands=parser.registered_menu_commands,
             has_set_my_commands=parser.has_set_my_commands,
+            skipped_files=parser.skipped_files,
         )
         bot_map = analyzer.build_map()
         return {
@@ -425,7 +434,7 @@ def main() -> None:
         target = Path(args.target)
         out_dir = Path(getattr(args, "output_dir", "output"))
         out_dir.mkdir(parents=True, exist_ok=True)
-        stem = target.stem if target.is_file() else target.name
+        stem = (target.stem if target.is_file() else target.resolve().name) or "report"
         out_md = out_dir / f"{stem}_report.md"
         out_json = out_dir / f"{stem}_data.json"
         out_html = out_dir / f"{stem}_map.html" if getattr(args, "html", False) else None

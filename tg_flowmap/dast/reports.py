@@ -260,8 +260,8 @@ def build_report_md(cfg: Config, state: State, bot: str) -> str:
             blocked_counts[b["blocked_reason"].split(":")[0]] += 1
 
     metrics = state.metrics_all(bot)
-    actions_total = int(state.progress_get(bot, "actions", str(metrics.get("telegram_actions", 0))))
-    starts_total = metrics.get("start_count", int(state.progress_get(bot, "start_count", "0")))
+    actions_total = int(state.progress_get(bot, "actions", str(metrics.get("telegram_actions", 0))) or 0)
+    starts_total = metrics.get("start_count", int(state.progress_get(bot, "start_count", "0") or 0))
     rec_starts = metrics.get("recovery_start_count", 0)
     local_returns = metrics.get("successful_local_returns", 0)
     avoided = metrics.get("avoided_replays", 0)

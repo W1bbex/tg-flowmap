@@ -57,13 +57,36 @@ def evaluate_ast_node(
         return "".join(parts)
 
     if isinstance(node, ast.IfExp):
+        test_val = evaluate_ast_node(node.test, local_vars, global_vars, depth + 1, max_depth)
         body_val = evaluate_ast_node(node.body, local_vars, global_vars, depth + 1, max_depth)
         orelse_val = evaluate_ast_node(node.orelse, local_vars, global_vars, depth + 1, max_depth)
-        if body_val is not None and not str(body_val).startswith("$"):
+        if test_val is not None and not str(test_val).startswith("$"):
+            return body_val if bool(test_val) else orelse_val
+        if body_val == orelse_val and body_val is not None:
             return body_val
-        if orelse_val is not None and not str(orelse_val).startswith("$"):
-            return orelse_val
-        return body_val if body_val is not None else orelse_val
+        return None
+
+    if isinstance(node, ast.Compare):
+        left = evaluate_ast_node(node.left, local_vars, global_vars, depth + 1, max_depth)
+        if len(node.ops) == 1 and len(node.comparators) == 1:
+            op = node.ops[0]
+            right = evaluate_ast_node(node.comparators[0], local_vars, global_vars, depth + 1, max_depth)
+            if left is not None and right is not None and not str(left).startswith("$") and not str(right).startswith("$"):
+                if isinstance(op, ast.Eq):
+                    return left == right
+                if isinstance(op, ast.NotEq):
+                    return left != right
+                if isinstance(op, ast.In):
+                    try:
+                        return left in right
+                    except TypeError:
+                        pass
+                if isinstance(op, ast.NotIn):
+                    try:
+                        return left not in right
+                    except TypeError:
+                        pass
+        return None
 
     if isinstance(node, ast.BoolOp):
         if isinstance(node.op, ast.Or):

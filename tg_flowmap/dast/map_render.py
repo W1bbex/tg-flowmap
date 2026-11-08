@@ -102,9 +102,9 @@ def generate_maps(state: State, bot: str, output_dir: Path) -> dict[str, Path]:
             "action_id": e["action_id"],
             "label": act.get("label", e["action_id"]),
             "result_type": e.get("result_type", "edit"),
-            "confidence": float(e.get("confidence", 1.0)),
-            "is_stable": bool(e.get("is_stable", 1)),
-            "observations_count": int(e.get("observations_count", 1)),
+            "confidence": float(e["confidence"]) if e.get("confidence") is not None else 1.0,
+            "is_stable": bool(e["is_stable"]) if e.get("is_stable") is not None else True,
+            "observations_count": int(e["observations_count"]) if e.get("observations_count") is not None else 1,
         })
 
     # 2. Если graph_edges пуст — строим из transitions (обратная совместимость)

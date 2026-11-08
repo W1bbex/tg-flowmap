@@ -13,7 +13,7 @@ async def create_client(cfg: Config):
     api_id = cfg.api_id or os.getenv("TELEGRAM_API_ID") or os.getenv("API_ID")
     api_hash = cfg.api_hash or os.getenv("TELEGRAM_API_HASH") or os.getenv("API_HASH")
 
-    if not api_id or not api_hash or "PUT_YOUR" in str(api_hash):
+    if not api_id or not api_hash or "PUT_YOUR" in str(api_hash) or "PUT_YOUR" in str(api_id):
         raise RuntimeError(
             "API credentials не настроены: укажите api_id и api_hash в config.json "
             "или через переменные окружения TELEGRAM_API_ID / TELEGRAM_API_HASH "

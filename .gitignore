@@ -27,6 +27,11 @@ output/
 
 # Internal agent docs & audit reports
 CRITIQUE_REPORT*.md
+CRITIC*.md
 PROJECT.md
 ARCHITECTURE.md
+IDEAS.md
+AUDIT*.md
+REVIEW*.md
+TODO.md
 

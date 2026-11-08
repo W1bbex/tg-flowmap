@@ -1,4 +1,4 @@
-"""Регрессионные тесты исправлений DAST-подсистемы:
+"""Регрессионные тесты безопасности и сериализации DAST:
 - Изоляция Telethon .session файла от каталога отчётов
 - Корректная загрузка graph.json (nodes, edges, metrics) в _load_target_data (команда compare)
 - Блокировка опасного callback_data payload даже при наличии метки в allowlist
