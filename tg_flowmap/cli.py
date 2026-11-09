@@ -256,12 +256,15 @@ def run_dast_scan(
     print(f"Директория:    {cfg.output_dir.resolve()}")
     print("-" * 60)
 
+    scan_exit_code = 0
     try:
         statuses = asyncio.run(run_scan(cfg, bots=[bot_name]))
-        bot_status = statuses.get(bot_name, "ok")
+        bot_status = statuses.get(bot_name, "error: не получен результат обхода")
         if "error" in bot_status.lower():
-            print(f"[WARN] Обход завершился со статусом: {bot_status}")
+            scan_exit_code = 1
+            print(f"[ERROR] Обход завершился со статусом: {bot_status}", file=sys.stderr)
     except KeyboardInterrupt:
+        scan_exit_code = 130
         print("\n[INFO] Обход прерван пользователем. Прогресс сохранён в БД.")
     except Exception as e:
         print(f"[ERROR] Ошибка выполнения обхода: {e}", file=sys.stderr)
@@ -273,12 +276,13 @@ def run_dast_scan(
     finally:
         state.close()
 
-    print(f"\n✅ Обход завершён!")
+    if scan_exit_code == 0:
+        print("\n✅ Обход завершён!")
     if reports.get("report"):
         print(f"📄 Отчёт сохранён: {reports.get('report')}")
     if reports.get("map_html"):
         print(f"📊 Интерактивная карта: {reports.get('map_html')}")
-    return 0
+    return scan_exit_code
 
 
 def _load_target_data(target: str, out_dir: Path) -> dict:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -25,11 +24,36 @@ from tg_flowmap.sast.emoji import fetch_custom_emojis, load_cached_emoji
 import run
 
 
-def test_run_wizard_no_name_error(tmp_path: Path) -> None:
-    """Verifies that run.py functions use cfg_path and do not contain undefined cfg_file references."""
-    source = inspect.getsource(run.run_telegram_config_wizard)
-    assert "os.startfile(cfg_file)" not in source
-    assert "os.startfile(cfg_path)" in source
+@pytest.mark.parametrize("platform", ["win32", "darwin", "linux"])
+def test_wizard_opens_requested_template_and_reads_edited_settings(tmp_path, monkeypatch, platform):
+    """Run the template branch while replacing only console input and the editor."""
+    cfg_path = tmp_path / "chosen-config.json"
+    answers = iter(["2", ""])
+    monkeypatch.setattr(run, "is_interactive", lambda: False)
+    monkeypatch.setattr(run, "SCRIPT_DIR", tmp_path)
+    monkeypatch.setattr(run.sys, "platform", platform)
+    monkeypatch.setattr("builtins.input", lambda *_: next(answers))
+
+    def edit_config(path):
+        assert Path(path) == cfg_path
+        initial = json.loads(cfg_path.read_text(encoding="utf-8"))
+        assert initial["api_id"] == 0
+        cfg_path.write_text(json.dumps({
+            "api_id": 12345678, "api_hash": "0123456789abcdef0123456789abcdef",
+        }), encoding="utf-8")
+
+    if platform == "win32":
+        editor = MagicMock(side_effect=edit_config)
+        monkeypatch.setattr(run.os, "startfile", editor, raising=False)
+        expected = cfg_path
+    else:
+        editor = MagicMock(side_effect=lambda command: edit_config(command[-1]))
+        monkeypatch.setattr(run.subprocess, "Popen", editor)
+        expected = ["open" if platform == "darwin" else "xdg-open", str(cfg_path)]
+
+    assert run.run_telegram_config_wizard(cfg_path) is True
+    editor.assert_called_once_with(expected)
+    assert json.loads(cfg_path.read_text(encoding="utf-8"))["api_id"] == 12345678
 
 
 def test_screen_identity_buttons_signature_none_url_comparison() -> None:

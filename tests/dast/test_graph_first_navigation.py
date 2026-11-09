@@ -394,25 +394,79 @@ def test_ctrl_c_pause_and_clean_stop(cfg, state, tmp_path):
 
 
 # 15. Ошибка одного crawler не останавливает другой
-def test_error_in_one_crawler_does_not_crash_runner(cfg, state):
-    """Сбой одного бота регистрирует ошибку в БД, не роняя общее состояние."""
-    state.register_bot("@bot_err")
-    state.errors_add("@bot_err", "crash", "Simulated timeout")
-    state.set_bot_status("@bot_err", "error", "Simulated timeout")
+def test_scheduler_completes_other_bot_after_crawler_failure(cfg, monkeypatch):
+    """The real scheduler catches one child's error and waits for the other child."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+    from tg_flowmap.dast import scheduler
 
-    state.register_bot("@bot_ok")
-    state.set_bot_status("@bot_ok", "done")
+    client = MagicMock()
+    client.disconnect = AsyncMock()
+    monkeypatch.setattr(scheduler, "create_client", AsyncMock(return_value=client))
+    monkeypatch.setattr(scheduler, "ensure_authorized", AsyncMock(return_value=True))
+    monkeypatch.setattr(scheduler, "_resolve_entity", AsyncMock(side_effect=[
+        SimpleNamespace(id=111), SimpleNamespace(id=222),
+    ]))
+    monkeypatch.setattr(scheduler, "setup_logging", lambda **_: None)
+    attempted = []
+    cfg.max_parallel_bots = 2
 
-    assert state.bot_info("@bot_err")["status"] == "error"
-    assert state.bot_info("@bot_ok")["status"] == "done"
+    async def run_child(crawler, resume=False):
+        attempted.append(crawler.bot)
+        if crawler.bot == "@bot_err":
+            raise RuntimeError("simulated crawler failure")
+        await asyncio.sleep(0)
+        crawler.state.set_bot_status(crawler.bot, "done")
+        return "done"
+
+    monkeypatch.setattr(scheduler.BotCrawler, "run", run_child)
+    result = asyncio.run(scheduler.run_scan(cfg, ["@bot_err", "@bot_ok"]))
+
+    assert result == {"@bot_err": "error", "@bot_ok": "done"}
+    assert sorted(attempted) == ["@bot_err", "@bot_ok"]
+    client.disconnect.assert_awaited_once()
+    saved = State(cfg.db_path)
+    try:
+        assert saved.bot_info("@bot_err")["status"] == "error"
+        assert saved.bot_info("@bot_ok")["status"] == "done"
+    finally:
+        saved.close()
 
 
-# 16. Console logging: детальный traceback идёт в файл logs/telethon.log
+# 16. Telethon log records reach the file and rotate after the size limit.
 def test_telethon_logging_rotation_to_file(tmp_path):
-    """Логирование Telethon настраивается с ротацией в logs/telethon.log."""
+    """Real log records rotate into exactly two backups after the size limit."""
+    import logging
+
     log_dir = tmp_path / "logs"
-    setup_logging(log_dir=log_dir, max_mb=1.0, backup_count=2)
-    assert log_dir.exists()
+    root = logging.getLogger()
+    telethon = logging.getLogger("telethon")
+    original = {logger: (list(logger.handlers), logger.level, logger.propagate) for logger in (root, telethon)}
+    added_handlers = set()
+    try:
+        setup_logging(log_dir=log_dir, max_mb=0.001, backup_count=2)
+        for logger, (handlers, _, _) in original.items():
+            added_handlers.update(set(logger.handlers) - set(handlers))
+        for number in range(30):
+            telethon.info("event-%02d %s", number, "x" * 200)
+        telethon.info("latest-record-marker")
+        for handler in added_handlers:
+            handler.flush()
+        assert {path.name for path in log_dir.iterdir()} == {
+            "telethon.log", "telethon.log.1", "telethon.log.2",
+        }
+        assert "latest-record-marker" in (log_dir / "telethon.log").read_text(encoding="utf-8")
+        assert "event-" in (log_dir / "telethon.log.1").read_text(encoding="utf-8")
+        assert "event-" in (log_dir / "telethon.log.2").read_text(encoding="utf-8")
+    finally:
+        for logger, (handlers, level, propagate) in original.items():
+            for handler in set(logger.handlers) - set(handlers):
+                logger.removeHandler(handler)
+                added_handlers.add(handler)
+            logger.setLevel(level)
+            logger.propagate = propagate
+        for handler in added_handlers:
+            handler.close()
 
 
 # 17. Diagram: map.html, map.svg, map.mmd генерируются
@@ -483,8 +537,8 @@ def test_safety_blocked_button_never_selected_by_planner(cfg, state):
     assert "s_shop" not in unexplored or len(unexplored["s_shop"]) == 0
 
 
-# 20. Action budget: строгий учёт всех типов действий
-def test_action_budget_counts_all_types(cfg, state, tmp_path):
+# 20. The crawler stops when the configured action budget is reached.
+def test_crawler_stops_when_action_budget_is_reached(cfg, state, tmp_path):
     """Превышение max_actions_per_bot прерывает обход со статусом limit_reached."""
     cfg.max_actions_per_bot = 2
     menu = menu_msg()
@@ -551,11 +605,12 @@ def test_replay_uses_fresh_callback_token_never_old_token(cfg, state, tmp_path):
         # Запускаем replay до cat_sid
         routes = state.routes_all(BOT)
         cat_route = next(r for r in routes if r["screen_id"] == cat_sid)
+        replay_start = len(nav.presses)
         ok = await crawler._replay_path(cat_sid, cat_route["path"], cat_route["route_id"])
         assert ok is True
-        assert b"tok_v2" in nav.presses
-        # tok_v1 не должен повторно нажиматься во время replay
-        assert nav.presses.count(b"tok_v1") == 0 or b"tok_v2" in nav.presses
+        replay_presses = nav.presses[replay_start:]
+        assert b"tok_v2" in replay_presses
+        assert b"tok_v1" not in replay_presses
 
     asyncio.run(scenario())
 

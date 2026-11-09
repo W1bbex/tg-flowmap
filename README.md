@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-brightgreen.svg)]()
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)]()
-[![Tests: 259 passed](https://img.shields.io/badge/tests-258%20passed-brightgreen.svg)]()
+[![Tests: 274 passed](https://img.shields.io/badge/tests-274%20passed-brightgreen.svg)]()
 
 `tg-flowmap` — комплексный инженерный инструмент для аудита, визуализации и сравнения Telegram-ботов:
 1. **SAST (Static AST)**: сканирует исходный код вашего бота **без запуска**, находит тупики, битые коллбеки, забытые команды меню и нарушения спецификации Telegram Bot API за 50 мс без единой зависимости.
@@ -45,6 +45,8 @@ tg-flowmap sast path/to/my_bot
 tg-flowmap dast @competitor_bot
 ```
 > Обходит интерфейс конкурента, сохраняет структуру меню, карточки и отчёт в `output/@competitor_bot/`.
+
+Код завершения DAST: `1` при ошибке обхода или отсутствии результата от планировщика, `130` при прерывании пользователем. Статусы `done`, `paused`, `limit_reached` и `skipped` возвращают `0`; это не гарантирует полного обхода интерфейса. При возвращённом статусе ошибки или прерывании CLI формирует отчёт по сохранённому состоянию.
 
 ### 4. Ультимативное сравнение с конкурентом (AI Benchmark)
 
@@ -138,4 +140,4 @@ tg-flowmap compare path/to/my_bot @competitor_bot
 ```bash
 pytest tests -v
 ```
-**258 passing tests** (SAST, DAST, Safety, State, Regression) с полным контролем бюджета памяти и производительности.
+**274 теста** (SAST, DAST, Safety, State, Regression), включая проверку кодов завершения DAST и сохранения отчётов при ошибке или прерывании.

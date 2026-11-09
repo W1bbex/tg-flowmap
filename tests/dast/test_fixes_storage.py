@@ -166,21 +166,41 @@ def test_transaction_rollback_leaves_no_partial_rows(state):
     assert state.progress_get(BOT, "k") == "1"
 
 
-def test_insert_message_atomic_all_or_nothing(state):
-    """insert_message пишет сообщение+entities+media+emoji одной транзакцией."""
+@pytest.mark.parametrize("failure_table", [None, "entities", "media", "emoji_documents", "emoji_occurrences"])
+def test_insert_message_commits_all_related_rows_or_rolls_them_back(state, failure_table):
+    """A failure at each child insert must leave every table unchanged."""
     from telethon.tl.types import MessageEntityCustomEmoji
+    from tg_flowmap.dast.models import MediaInfo
 
     msg = FakeMessage(10, "🥇 привет")
     msg.entities = [MessageEntityCustomEmoji(offset=0, length=2, document_id=777)]
     from tg_flowmap.dast.capture import capture_message
     cap = capture_message(msg, BOT, "new", state=state)
+    cap.media = [MediaInfo(kind="photo", tg_id="123", caption=msg.message, has_caption_entities=True)]
     state.upsert_screen(BOT, "s_x", "fp_x", 0, "x")
+    state.upsert_emoji_document("existing", "x")
+    tables = ("messages", "entities", "media", "emoji_documents", "emoji_occurrences")
+
+    def counts():
+        return {table: state._query_one(f"SELECT COUNT(*) AS c FROM {table}")["c"] for table in tables}
+
+    before = counts()
+    if failure_table:
+        state._exec(
+            f"CREATE TEMP TRIGGER fail_child_insert BEFORE INSERT ON {failure_table} "
+            "BEGIN SELECT RAISE(ABORT, 'injected child insert failure'); END"
+        )
+        with pytest.raises(sqlite3.IntegrityError, match="injected child insert failure"):
+            state.insert_message(cap, "s_x")
+        assert counts() == before
+        assert not state._conn.in_transaction
+        state._exec("DROP TRIGGER fail_child_insert")
+
     rowid = state.insert_message(cap, "s_x")
-    assert state._query_one(
-        "SELECT COUNT(*) AS c FROM entities WHERE message_rowid=?", (rowid,))["c"] == 1
-    assert state._query_one(
-        "SELECT COUNT(*) AS c FROM emoji_occurrences WHERE message_rowid=?",
-        (rowid,))["c"] == 1
+    assert counts() == {table: count + 1 for table, count in before.items()}
+    assert state._query_one("SELECT media_ref FROM messages WHERE id=?", (rowid,))["media_ref"] is not None
+    for table in ("entities", "media", "emoji_occurrences"):
+        assert state._query_one(f"SELECT COUNT(*) AS c FROM {table} WHERE message_rowid=?", (rowid,))["c"] == 1
 
 
 def test_insert_message_version_race_safe_retry(state):
