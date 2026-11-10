@@ -150,8 +150,9 @@ class Navigator:
 
     async def send_text(self, text: str, why: str = "manual_answer") -> PressOutcome:
         """Отправка разрешённого текста (manual_answers.json) — тот же конвейер."""
+        masked_text = f"[скрыто, длина {len(text or '')}]"
         action_id = await self.logger.start_action(
-            self.bot, f"text:{why}", {"text": text})
+            self.bot, f"text:{why}", {"text": masked_text})
         t0 = time.monotonic()
         try:
             await self._through_limiters()

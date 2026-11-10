@@ -62,26 +62,28 @@ def generate_llm_benchmark_prompt(
     ]
 
     if bot_a_screens:
+        screens_a = list(bot_a_screens.values()) if isinstance(bot_a_screens, dict) else list(bot_a_screens)
         lines.append(f"### 🗺️ Структура экранов: {bot_a_name}")
         lines.append("```text")
-        for s in bot_a_screens[:30]:
+        for s in screens_a[:30]:
             name = s.get("title") or s.get("screen_id") or "screen"
             btns = _format_screen_buttons(s.get("buttons"))
             lines.append(f"- [{name}]: кнопки -> [{btns}]")
-        if len(bot_a_screens) > 30:
-            lines.append(f"... и ещё {len(bot_a_screens) - 30} экранов")
+        if len(screens_a) > 30:
+            lines.append(f"... и ещё {len(screens_a) - 30} экранов")
         lines.append("```")
         lines.append("")
 
     if bot_b_screens:
+        screens_b = list(bot_b_screens.values()) if isinstance(bot_b_screens, dict) else list(bot_b_screens)
         lines.append(f"### 🗺️ Структура экранов: {bot_b_name}")
         lines.append("```text")
-        for s in bot_b_screens[:30]:
+        for s in screens_b[:30]:
             name = s.get("title") or s.get("screen_id") or "screen"
             btns = _format_screen_buttons(s.get("buttons"))
             lines.append(f"- [{name}]: кнопки -> [{btns}]")
-        if len(bot_b_screens) > 30:
-            lines.append(f"... и ещё {len(bot_b_screens) - 30} экранов")
+        if len(screens_b) > 30:
+            lines.append(f"... и ещё {len(screens_b) - 30} экранов")
         lines.append("```")
         lines.append("")
 

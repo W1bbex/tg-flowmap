@@ -882,6 +882,7 @@ const ICON_SYMBOLS = {
         const body = document.createElement("div");
         body.className = "tg-card-body";
         body.innerHTML = formatMessageText(node.text_template || "<i>(Пустой текст)</i>");
+        card.appendChild(body);
       }
 
       // Keyboard with Colored Buttons

@@ -114,7 +114,7 @@ class AstParser:
                 tree = ast.parse(content, filename=str(filepath))
                 parsed_trees.append((filepath, tree))
                 self._extract_global_constants(tree)
-            except (SyntaxError, UnicodeDecodeError) as e:
+            except (SyntaxError, UnicodeDecodeError, ValueError, RecursionError, OSError) as e:
                 self.skipped_files.append((filepath, f"{type(e).__name__}: {e}"))
                 continue
 
@@ -143,8 +143,8 @@ class AstParser:
 
         try:
             tree = ast.parse(content, filename=str(filepath))
-        except SyntaxError as e:
-            self.skipped_files.append((filepath, f"SyntaxError: {e}"))
+        except (SyntaxError, UnicodeDecodeError, ValueError, RecursionError, OSError) as e:
+            self.skipped_files.append((filepath, f"{type(e).__name__}: {e}"))
             return
 
         self._extract_global_constants(tree)

@@ -190,7 +190,12 @@ class SafetyFilter:
     # ------------------------------------------------------------------ misc
     def is_back(self, label: str) -> bool:
         lnorm = _norm(label)
-        return any(bw and bw in lnorm for bw in self.back_words)
+        for bw in self.back_words:
+            if not bw:
+                continue
+            if re.search(r'(?:\b|_|^)' + re.escape(bw) + r'(?:\b|_|$)', lnorm, re.UNICODE):
+                return True
+        return False
 
     def find_back_button(self, buttons: Iterable):
         """Первая pressable кнопка возврата (blocked_reason is None)."""

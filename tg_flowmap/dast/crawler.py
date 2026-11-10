@@ -528,7 +528,6 @@ class BotCrawler:
 
         # Успешное выполнение
         self.action_retries.pop(action_id, None)
-        self._bump_action()
         if act.get("button_type") == "callback":
             self.metrics.callbacks_pressed += 1
             self.state.metric_incr(self.bot, "callbacks_pressed", 1)
@@ -594,6 +593,7 @@ class BotCrawler:
         next_msg = exec_res.nav_msg if exec_res.nav_msg is not None else self._current_msg
         next_rowid = exec_res.nav_rowid if exec_res.nav_rowid is not None else self._current_msg_rowid
         self._set_position(dest_sid, next_msg, next_rowid)
+        self._bump_action()
 
     async def _execute_local_path(self, path_edges: list[Any]) -> bool:
         """Пошаговое прохождение маршрута в графе переходов."""
@@ -690,6 +690,7 @@ class BotCrawler:
 
                 matched_inst, conf, _ = match_button_instance(back_btn, cur_instances)
                 if matched_inst is not None and conf >= 0.8:
+                    prev_screen_id = self._current_screen_id
                     btn_to_press = self.executor._to_button_ref(matched_inst, self._current_msg.id)
                     outcome = await self.navigator.press_button(btn_to_press, self._current_msg.id)
                     self._bump_action()
@@ -699,14 +700,14 @@ class BotCrawler:
                             target["depth_min"], None, [], None, None,
                             create_route=False)
                         # Регистрируем наблюдавшийся переход с каноничным action_id
-                        act_candidates = self.state.actions_for_screen(self.bot, self._current_screen_id)
+                        act_candidates = self.state.actions_for_screen(self.bot, prev_screen_id)
                         matched_act = next(
                             (a for a in act_candidates if a["row"] == back_btn.row and a["col"] == back_btn.col),
                             None,
                         )
                         rec_action_id = matched_act["action_id"] if matched_act else (btn_to_press.button_fp or "act_back")
                         self.graph.record_transition(
-                            self._current_screen_id,
+                            prev_screen_id,
                             rec_action_id,
                             ref.screen_id,
                             outcome.kind,
@@ -826,9 +827,16 @@ class BotCrawler:
         for kind, m in (getattr(outcome, "extra_messages", None) or []):
             msgs.append((_outcome_event_type(kind), m))
 
+        # навигационное сообщение: последнее С кнопками, иначе последнее
+        nav_idx = len(msgs) - 1
+        for i, (_event_type, m) in enumerate(msgs):
+            if _msg_has_buttons(m):
+                nav_idx = i
+
         observed: list[tuple[object, ScreenRef, bool, int]] = []
         for i, (event_type, m) in enumerate(msgs):
-            entry = b.label if i == 0 else f"{b.label} (+{i})"
+            is_nav = (i == nav_idx)
+            entry = b.label if is_nav else f"{b.label} (+{i})"
             extra = {
                 "step_type": "button",
                 "action_id": act_id,
@@ -836,22 +844,17 @@ class BotCrawler:
                 "col": b.col,
                 "label": b.label,
                 "button_type": b.button_type,
-            } if i == 0 else None
+            } if is_nav else None
             ref, created, rowid = await self._observe(
                 m, event_type, depth + 1, route_id, path,
-                entry, act_id if i == 0 else None,
-                create_route=True, entry_extra=extra)
+                entry, act_id if is_nav else None,
+                create_route=is_nav, entry_extra=extra)
             observed.append((m, ref, created, rowid))
 
-        # навигационное сообщение: последнее С кнопками, иначе последнее
         to_screen_id: str | None = None
         to_rowid: int | None = None
         nav_created = False
         if observed:
-            nav_idx = len(observed) - 1
-            for i, (m, _ref, _c, _r) in enumerate(observed):
-                if _msg_has_buttons(m):
-                    nav_idx = i
             nav_msg, nav_ref, nav_created, to_rowid = observed[nav_idx]
             to_screen_id = nav_ref.screen_id
             self._set_position(to_screen_id, nav_msg, to_rowid)

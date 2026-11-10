@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import ssl
 import sys
 import urllib.error
@@ -150,7 +151,8 @@ def fetch_custom_emojis(
 
                     # Determine extension
                     ext = Path(file_path_str).suffix.lower() or ".webp"
-                    target_file = cache_path / f"{custom_id}{ext}"
+                    safe_id = re.sub(r"[^0-9a-zA-Z_-]", "", str(custom_id)) or "emoji"
+                    target_file = cache_path / f"{safe_id}{ext}"
                     target_file.write_bytes(raw_bytes)
 
                     mime = "image/svg+xml" if ext == ".svg" else f"image/{ext.lstrip('.')}"

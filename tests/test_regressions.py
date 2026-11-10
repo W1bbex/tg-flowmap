@@ -276,3 +276,81 @@ def test_auth_put_your_api_id() -> None:
             await create_client(cfg)
 
     asyncio.run(_run())
+
+
+def test_llm_exporter_dict_and_list_screens():
+    from tg_flowmap.core.llm_exporter import generate_llm_benchmark_prompt
+    dict_screens = {
+        "s1": {"screen_id": "s1", "title": "Screen 1", "buttons": [{"label": "Btn1"}]}
+    }
+    prompt = generate_llm_benchmark_prompt("BotA", {}, "BotB", {}, bot_a_screens=dict_screens, bot_b_screens=[{"screen_id": "s2"}])
+    assert "Screen 1" in prompt
+    assert "s2" in prompt
+
+
+def test_evaluator_dict_unpacking():
+    import ast
+    from tg_flowmap.sast.evaluator import evaluate_ast_node
+    tree = ast.parse("{'a': 1, **{'b': 2}}").body[0].value
+    res = evaluate_ast_node(tree)
+    assert res == {"a": 1, "b": 2}
+
+
+def test_safety_filter_is_back_word_boundaries():
+    from tg_flowmap.dast.config import Config
+    from tg_flowmap.dast.safety import SafetyFilter
+    cfg = Config(back_words=["back", "назад"])
+    sf = SafetyFilter(cfg)
+    assert sf.is_back("Back") is True
+    assert sf.is_back("Назад") is True
+    assert sf.is_back("Feedback") is False
+    assert sf.is_back("Cashback") is False
+
+
+def test_navigator_send_text_masks_secret_in_timeline(tmp_path: Path):
+    from tg_flowmap.dast.navigator import EventRouter, Navigator
+    from tg_flowmap.dast.ratelimit import FloodGate
+
+    state = State(tmp_path / "state.db")
+    cfg = Config(root=tmp_path)
+    tl_file = tmp_path / "timeline.jsonl"
+    writer = TimelineWriter(tl_file)
+    logger = ActionLogger(state, writer)
+    router = EventRouter()
+
+    sent_raw = []
+
+    class FakeClient:
+        async def send_message(self, chat, text):
+            sent_raw.append(text)
+            return None
+
+    class LimiterStub:
+        async def wait(self):
+            return None
+        async def acquire(self):
+            return None
+
+    nav = Navigator(
+        FakeClient(), "@bot", "chat", router, cfg, state, logger,
+        LimiterStub(), LimiterStub(), FloodGate(),
+    )
+
+    secret_val = "TOP_SECRET_PASSWORD_999"
+
+    async def _run():
+        cfg.wait_response_timeout = 0.05
+        cfg.wait_stabilization = 0.01
+        await nav.send_text(secret_val, why="manual_answer")
+        writer.close()
+
+    try:
+        asyncio.run(_run())
+        assert sent_raw == [secret_val]
+        raw_jsonl = tl_file.read_text(encoding="utf-8")
+        assert secret_val not in raw_jsonl
+        assert "[скрыто, длина" in raw_jsonl
+    finally:
+        state.close()
+
+

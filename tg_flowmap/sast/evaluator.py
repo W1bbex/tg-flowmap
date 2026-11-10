@@ -174,7 +174,11 @@ def evaluate_ast_node(
     if isinstance(node, ast.Dict):
         d = {}
         for k, v in zip(node.keys, node.values):
-            if k is not None:
+            if k is None:
+                unpacked = evaluate_ast_node(v, local_vars, global_vars, depth + 1, max_depth)
+                if isinstance(unpacked, dict):
+                    d.update(unpacked)
+            else:
                 key_val = evaluate_ast_node(k, local_vars, global_vars, depth + 1, max_depth)
                 if key_val is not None:
                     d[str(key_val)] = evaluate_ast_node(v, local_vars, global_vars, depth + 1, max_depth)

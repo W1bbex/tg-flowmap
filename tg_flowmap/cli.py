@@ -322,14 +322,14 @@ def _load_target_data(target: str, out_dir: Path) -> dict:
             nodes_data = graph_data.get("nodes") or graph_data.get("screens") or []
             nodes = list(nodes_data.values()) if isinstance(nodes_data, dict) else (nodes_data if isinstance(nodes_data, list) else [])
             edges = graph_data.get("edges") or []
-            total_buttons = sum(len(n.get("buttons", [])) for n in nodes)
+            total_buttons = sum(len(n.get("buttons") or []) for n in nodes)
             screens_list = [
                 {
                     "screen_id": n.get("id") or n.get("screen_id"),
                     "title": (n.get("text_normalized") or n.get("text") or n.get("id") or "").splitlines()[0][:40]
                     if (n.get("text_normalized") or n.get("text"))
                     else (n.get("id") or n.get("screen_id")),
-                    "buttons": n.get("buttons", []),
+                    "buttons": n.get("buttons") or [],
                 }
                 for n in nodes
             ]
