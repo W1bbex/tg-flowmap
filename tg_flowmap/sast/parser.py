@@ -7,8 +7,17 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from tg_flowmap.core.models import Button, Keyboard, MessageNode
+from tg_flowmap.core.models import Keyboard, MessageNode
 from tg_flowmap.sast.evaluator import _ast_to_value, extract_module_constants
+from tg_flowmap.sast.keyboard_parser import KeyboardParserMixin, KeyboardStore
+from tg_flowmap.sast.screen_consolidator import ScreenConsolidatorMixin
+
+__all__ = [
+    "AstParser",
+    "KeyboardStore",
+    "_classify_operand_source",
+    "_unwrap_operand",
+]
 
 
 def _unwrap_operand(node: ast.AST) -> ast.AST:
@@ -47,19 +56,24 @@ def _classify_operand_source(node: ast.AST) -> Optional[str]:
     return None
 
 
-class AstParser:
+class AstParser(KeyboardParserMixin, ScreenConsolidatorMixin):
     def __init__(self):
         self.reset()
 
     def reset(self) -> None:
         """Resets all parsed state containers before analysis."""
-        self.keyboards: Dict[str, Keyboard] = {}
+        self.keyboards: Dict[str, Keyboard] = KeyboardStore(self)
+        self.module_keyboards: Dict[str, Dict[str, Keyboard]] = {}
+        self._keyboard_source_modules: Dict[str, Set[str]] = {}
         self.keyboard_param_defaults: Dict[str, List[Tuple[str, Optional[str]]]] = {}
         self.nodes: Dict[str, MessageNode] = {}
         self.keyboard_aliases: Dict[str, str] = {}
         self.screen_aliases: Dict[str, str] = {}
         self.hub_return_nodes: Set[str] = set()
         self.global_constants: Dict[str, Any] = {}
+        self.module_constants: Dict[str, Dict[str, Any]] = {}
+        self._constant_source_modules: Dict[str, Set[str]] = {}
+        self._current_filepath: Optional[Path] = None
         self.custom_emoji_ids: Set[str] = set()
         self.registered_menu_commands: Set[str] = set()
         self.has_set_my_commands: bool = False
@@ -113,7 +127,7 @@ class AstParser:
                 content = filepath.read_text(encoding="utf-8", errors="replace")
                 tree = ast.parse(content, filename=str(filepath))
                 parsed_trees.append((filepath, tree))
-                self._extract_global_constants(tree)
+                self._extract_global_constants(tree, filepath)
             except (SyntaxError, UnicodeDecodeError, ValueError, RecursionError, OSError) as e:
                 self.skipped_files.append((filepath, f"{type(e).__name__}: {e}"))
                 continue
@@ -147,7 +161,7 @@ class AstParser:
             self.skipped_files.append((filepath, f"{type(e).__name__}: {e}"))
             return
 
-        self._extract_global_constants(tree)
+        self._extract_global_constants(tree, filepath)
         self._extract_keyboards(tree, filepath)
         self._extract_set_my_commands(tree, filepath)
         for alias, target in self.keyboard_aliases.items():
@@ -156,523 +170,78 @@ class AstParser:
         self._extract_handlers(tree, filepath)
         self._consolidate_duplicate_screens()
 
-    def _consolidate_duplicate_screens(self) -> None:
-        """Merges duplicate screens (e.g. /led command with led_menu callback)
-        and converts pseudo-screens that just return to hub (like console_close)
-        into actions transitioning to the hub.
-        """
-        to_remove = set()
-
-        # Pass A: Merge commands that open existing callback screens
-        for node_id, node in list(self.nodes.items()):
-            if node_id.startswith("cmd:") and node_id not in ("cmd:/start", "cmd:/help"):
-                cmd_clean = node_id.split("cmd:/", 1)[-1] if "cmd:/" in node_id else node_id.split("cmd:", 1)[-1]
-                cmd_clean = cmd_clean.strip().lstrip("/")
-                if not node.keyboard:
-                    continue
-
-                target_screen = None
-                for other_id, other_node in self.nodes.items():
-                    if other_id == node_id or not other_id.startswith("cb:"):
-                        continue
-                    other_clean = other_id.split("cb:", 1)[-1]
-                    name_matches = (
-                        other_clean in (f"{cmd_clean}_menu", f"{cmd_clean}_open", cmd_clean, f"open_{cmd_clean}")
-                        or other_clean.startswith(f"{cmd_clean}_")
-                    )
-                    kb_matches = bool(other_node.keyboard and other_node.keyboard.name == node.keyboard.name)
-                    if name_matches and kb_matches:
-                        target_screen = other_node
-                        break
-                    if other_clean in (f"{cmd_clean}_menu", f"{cmd_clean}_open", cmd_clean, f"open_{cmd_clean}") and not other_node.keyboard:
-                        target_screen = other_node
-                        break
-
-                if target_screen:
-                    cmd_alias = f"/{cmd_clean}"
-                    if cmd_alias not in target_screen.aliases:
-                        target_screen.aliases.append(cmd_alias)
-                    self.screen_aliases[node_id] = target_screen.id
-                    to_remove.add(node_id)
-
-        # Pass B: Convert handlers that just re-send hub keyboard (only if explicitly named *_close, *_cancel, *_exit, *_back)
-        hub_id = "cb:menu"
-        hub_node = self.nodes.get(hub_id)
-        if hub_node and hub_node.keyboard and getattr(hub_node.keyboard, "name", None):
-            hub_kb_name = hub_node.keyboard.name
-            for node_id, node in list(self.nodes.items()):
-                if node_id in (hub_id, "cmd:/start") or node_id in to_remove:
-                    continue
-
-                node_clean = node_id.split(":", 1)[-1].lower()
-                is_return_intent = any(node_clean.endswith(k) for k in ("_close", "_cancel", "_exit", "_back"))
-                if is_return_intent and node.keyboard and node.keyboard.name == hub_kb_name:
-                    node.node_type = "callback"
-                    node.keyboard = None
-                    self.hub_return_nodes.add(node_id)
-
-        for rid in to_remove:
-            self.nodes.pop(rid, None)
-
-    def _extract_global_constants(self, tree: ast.AST) -> None:
+    def _extract_global_constants(self, tree: ast.AST, filepath: Optional[Path] = None) -> None:
         """Collects top-level module constants like CANONICAL_ICONS, EMOJI_BTN_*, etc."""
         constants = extract_module_constants(tree)
-        self.global_constants.update(constants)
+        if filepath is not None:
+            self._current_filepath = filepath
+            stem = filepath.stem
+            file_str = str(filepath)
+            self.module_constants.setdefault(stem, {}).update(constants)
+            self.module_constants.setdefault(file_str, {}).update(constants)
+            for k in constants:
+                self._constant_source_modules.setdefault(k, set()).add(stem)
 
-    def _extract_keyboards(self, tree: ast.AST, filepath: Path) -> None:
-        """Finds functions, class methods, or module assignments constructing Telegram keyboards."""
-        for node in getattr(tree, "body", []):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                kb = self._parse_keyboard_function(node, filepath)
-                if kb and kb.rows:
-                    self.keyboards[node.name] = kb
-            elif isinstance(node, ast.ClassDef):
-                for item in node.body:
-                    if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        kb = self._parse_keyboard_function(item, filepath)
-                        if kb and kb.rows:
-                            self.keyboards[item.name] = kb
-                            self.keyboards[f"{node.name}.{item.name}"] = kb
-                    elif isinstance(item, ast.Assign):
-                        for target in item.targets:
-                            if isinstance(target, ast.Name):
-                                name_lower = target.id.lower()
-                                if any(k in name_lower for k in ("markup", "keyboard", "buttons", "menu", "kb")):
-                                    kb = self._parse_keyboard_expr(item.value, target.id, filepath, getattr(item, "lineno", 0), {})
-                                    if kb and kb.rows:
-                                        self.keyboards[target.id] = kb
-                                        self.keyboards[f"{node.name}.{target.id}"] = kb
-                    elif isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
-                        name_lower = item.target.id.lower()
-                        if any(k in name_lower for k in ("markup", "keyboard", "buttons", "menu", "kb")):
-                            if item.value:
-                                kb = self._parse_keyboard_expr(item.value, item.target.id, filepath, getattr(item, "lineno", 0), {})
-                                if kb and kb.rows:
-                                    self.keyboards[item.target.id] = kb
-                                    self.keyboards[f"{node.name}.{item.target.id}"] = kb
+        for k, v in constants.items():
+            if k not in self.global_constants:
+                self.global_constants[k] = v
+            elif filepath is not None and len(self._constant_source_modules.get(k, set())) <= 1:
+                self.global_constants[k] = v
 
-            elif isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        name_lower = target.id.lower()
-                        if any(k in name_lower for k in ("markup", "keyboard", "buttons", "menu", "kb")):
-                            kb = self._parse_keyboard_expr(node.value, target.id, filepath, getattr(node, "lineno", 0), {})
-                            if kb and kb.rows:
-                                self.keyboards[target.id] = kb
+    def _get_constants_for_file(self, filepath: Optional[Path] = None) -> Dict[str, Any]:
+        """Returns constant dictionary scoped to the given file, falling back to unambiguous constants."""
+        target = filepath or self._current_filepath
+        res = dict(self.global_constants)
+        if target is not None:
+            stem = target.stem
+            file_str = str(target)
+            mod_consts = self.module_constants.get(file_str) or self.module_constants.get(stem)
+            if mod_consts:
+                res.update(mod_consts)
+        return res
 
-            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                name_lower = node.target.id.lower()
-                if any(k in name_lower for k in ("markup", "keyboard", "buttons", "menu", "kb")):
-                    if node.value:
-                        kb = self._parse_keyboard_expr(node.value, node.target.id, filepath, getattr(node, "lineno", 0), {})
-                        if kb and kb.rows:
-                            self.keyboards[node.target.id] = kb
+    def get_keyboard(self, kb_ref: str, filepath: Optional[Path] = None) -> Optional[Keyboard]:
+        """Resolves a keyboard by reference name, respecting file/module scope and unambiguous fallbacks."""
+        if not kb_ref:
+            return None
 
-    def _parse_keyboard_function(self, func_node: ast.FunctionDef, filepath: Path) -> Optional[Keyboard]:
-        kb_name = func_node.name
-
-        # Scope analysis: collect function signature default arguments, local assignments, and list mutations
-        local_vars: Dict[str, List[ast.AST]] = {}
-        list_mutations: Dict[str, List[ast.AST]] = {}
-        builders: Dict[str, List[Button]] = {}
-        builder_types: Dict[str, str] = {}
-        builder_adjust: Dict[str, int] = {}
-
-        if hasattr(func_node, "args") and func_node.args:
-            pos_args = [a.arg for a in getattr(func_node.args, "args", [])]
-            defaults = list(getattr(func_node.args, "defaults", []))
-            default_offset = len(pos_args) - len(defaults)
-            param_info: List[Tuple[str, Optional[str]]] = []
-            for idx, arg_name in enumerate(pos_args):
-                def_str: Optional[str] = None
-                if idx >= default_offset:
-                    def_node = defaults[idx - default_offset]
-                    local_vars.setdefault(arg_name, []).append(def_node)
-                    val = _ast_to_value(def_node, {}, self.global_constants)
-                    if isinstance(val, str) and val:
-                        def_str = val
-                if arg_name not in ("self", "cls"):
-                    param_info.append((arg_name, def_str))
-
-            kw_args = getattr(func_node.args, "kwonlyargs", [])
-            kw_defs = getattr(func_node.args, "kw_defaults", [])
-            for kw_arg, kw_def in zip(kw_args, kw_defs):
-                def_str = None
-                if kw_def is not None:
-                    local_vars.setdefault(kw_arg.arg, []).append(kw_def)
-                    val = _ast_to_value(kw_def, {}, self.global_constants)
-                    if isinstance(val, str) and val:
-                        def_str = val
-                param_info.append((kw_arg.arg, def_str))
-
-            if param_info:
-                self.keyboard_param_defaults[kb_name] = param_info
-
-        for stmt in ast.walk(func_node):
-            if isinstance(stmt, ast.Assign):
-                for target in stmt.targets:
-                    if isinstance(target, ast.Name):
-                        local_vars.setdefault(target.id, []).append(stmt.value)
-                        if isinstance(stmt.value, ast.Call):
-                            call_name = getattr(stmt.value.func, "id", "") or getattr(stmt.value.func, "attr", "")
-                            if "reply" in call_name.lower():
-                                builder_types[target.id] = "reply"
-                            elif "inline" in call_name.lower():
-                                builder_types[target.id] = "inline"
-            elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
-                call = stmt.value
-                if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name):
-                    var_name = call.func.value.id
-                    method = call.func.attr
-                    if method in ("append", "extend") and call.args:
-                        list_mutations.setdefault(var_name, []).append(call.args[0])
-                    elif method in ("add", "button", "row"):
-                        builders.setdefault(var_name, [])
-                        if method == "button":
-                            btn = self._parse_button_element(call, local_vars)
-                            if btn:
-                                builders[var_name].append(btn)
-                        else:
-                            for arg in call.args:
-                                btn = self._parse_button_element(arg, local_vars)
-                                if btn:
-                                    builders[var_name].append(btn)
-                    elif method == "adjust" and call.args:
-                        adj_val = _ast_to_value(call.args[0], local_vars, self.global_constants)
-                        if isinstance(adj_val, int) and adj_val > 0:
-                            builder_adjust[var_name] = adj_val
-
-        # Check return statements
-        for stmt in ast.walk(func_node):
-            if isinstance(stmt, ast.Return) and stmt.value:
-                # Check for delegation / alias: e.g. return self.ui.main_menu_markup(...)
-                if isinstance(stmt.value, ast.Call):
-                    delegated_name = getattr(stmt.value.func, "attr", None) or getattr(stmt.value.func, "id", None)
-                    if delegated_name and delegated_name != kb_name and delegated_name != "as_markup":
-                        self.keyboard_aliases[kb_name] = delegated_name
-
-                    # Check if returning builder.as_markup()
-                    if getattr(stmt.value.func, "attr", "") == "as_markup":
-                        b_obj = getattr(stmt.value.func, "value", None)
-                        b_name = getattr(b_obj, "id", "")
-                        if b_name in builders and builders[b_name]:
-                            btn_list = builders[b_name]
-                            adj = builder_adjust.get(b_name, len(btn_list))
-                            rows = [btn_list[i : i + adj] for i in range(0, len(btn_list), adj)]
-                            if rows:
-                                b_type = builder_types.get(b_name, "inline")
-                                return Keyboard(name=kb_name, rows=rows, keyboard_type=b_type, source_file=str(filepath), line_number=stmt.lineno)
-
-                kb = self._parse_keyboard_expr(
-                    stmt.value,
-                    kb_name,
-                    filepath,
-                    stmt.lineno,
-                    local_vars,
-                    list_mutations,
+        # 1. Qualified module lookup: e.g. "admin.menu_kb"
+        if "." in kb_ref:
+            mod_part, name_part = kb_ref.split(".", 1)
+            mod_cand = self.module_keyboards.get(mod_part)
+            if mod_cand:
+                kb = (
+                    mod_cand.get(name_part)
+                    or mod_cand.get(name_part.split(".")[-1])
+                    or mod_cand.get(name_part.lstrip("_"))
                 )
-                if kb and kb.rows:
+                if kb:
                     return kb
 
-        # If no explicit return, check if builder was created in function
-        for b_name, btn_list in builders.items():
-            if btn_list:
-                adj = builder_adjust.get(b_name, len(btn_list))
-                rows = [btn_list[i : i + adj] for i in range(0, len(btn_list), adj)]
-                if rows:
-                    b_type = builder_types.get(b_name, "inline")
-                    return Keyboard(name=kb_name, rows=rows, keyboard_type=b_type, source_file=str(filepath), line_number=func_node.lineno)
+        # 2. Local file/module lookup
+        target = filepath or self._current_filepath
+        if target is not None:
+            stem = target.stem
+            file_str = str(target)
+            for m_dict in (self.module_keyboards.get(stem), self.module_keyboards.get(file_str)):
+                if m_dict:
+                    kb = (
+                        m_dict.get(kb_ref)
+                        or m_dict.get(self.keyboard_aliases.get(kb_ref, ""))
+                        or m_dict.get(kb_ref.split(".")[-1])
+                        or m_dict.get(kb_ref.lstrip("_"))
+                    )
+                    if kb:
+                        return kb
 
-        return None
-
-    @staticmethod
-    def _deduplicate_rows(rows: List[List[Button]]) -> List[List[Button]]:
-        seen: Set[Tuple[Optional[str], Optional[str], Optional[str]]] = set()
-        deduped: List[List[Button]] = []
-        for row in rows:
-            clean_row: List[Button] = []
-            for btn in row:
-                key = (btn.text, btn.callback_data, btn.url)
-                if key not in seen:
-                    seen.add(key)
-                    clean_row.append(btn)
-            if clean_row:
-                deduped.append(clean_row)
-        return deduped
-
-    def _parse_keyboard_expr(
-        self,
-        expr_node: ast.AST,
-        name: str,
-        filepath: Path,
-        lineno: int,
-        local_vars: Dict[str, List[ast.AST]],
-        list_mutations: Optional[Dict[str, List[ast.AST]]] = None,
-    ) -> Optional[Keyboard]:
-        rows: List[List[Button]] = []
-        if list_mutations is None:
-            list_mutations = {}
-
-        # Resolve variable reference if expr_node is a Name
-        candidate_exprs = [expr_node]
-        if isinstance(expr_node, ast.Name) and expr_node.id in local_vars:
-            candidate_exprs = local_vars[expr_node.id]
-
-        for expr in candidate_exprs:
-            # Case 1: Dict with "inline_keyboard": [ ... ]
-            if isinstance(expr, ast.Dict):
-                kb_type = "inline"
-                for k, v in zip(expr.keys, expr.values):
-                    if isinstance(k, ast.Constant) and k.value in ("inline_keyboard", "keyboard"):
-                        if k.value == "keyboard":
-                            kb_type = "reply"
-                        candidate_vals = [v]
-                        var_id = None
-                        if isinstance(v, ast.Name):
-                            var_id = v.id
-                            if var_id in local_vars:
-                                candidate_vals = local_vars[var_id]
-
-                        for val_node in candidate_vals:
-                            if isinstance(val_node, ast.List):
-                                for row_node in val_node.elts:
-                                    row = self._parse_button_row(row_node, local_vars, list_mutations)
-                                    if row:
-                                        rows.append(row)
-
-                        # Also append any mutations tracked for this variable
-                        if var_id and var_id in list_mutations:
-                            for mutated in list_mutations[var_id]:
-                                row = self._parse_button_row(mutated, local_vars, list_mutations)
-                                if row:
-                                    rows.append(row)
-
-                rows = self._deduplicate_rows(rows)
-                if rows:
-                    return Keyboard(name=name, rows=rows, keyboard_type=kb_type, source_file=str(filepath), line_number=lineno)
-
-            # Case 2: Direct list of rows [ [ {...} ], [ {...} ] ]
-            if isinstance(expr, ast.List):
-                for row_node in expr.elts:
-                    row = self._parse_button_row(row_node, local_vars, list_mutations)
-                    if row:
-                        rows.append(row)
-                rows = self._deduplicate_rows(rows)
-                if rows:
-                    return Keyboard(name=name, rows=rows, keyboard_type="inline", source_file=str(filepath), line_number=lineno)
-
-            # Case 3: Call InlineKeyboardMarkup(...) / ReplyKeyboardMarkup(...)
-            if isinstance(expr, ast.Call):
-                func_name = getattr(expr.func, "attr", None) or getattr(expr.func, "id", "")
-                if any(k in func_name.lower() for k in ("markup", "keyboard")):
-                    kb_type = "reply" if "reply" in func_name.lower() else "inline"
-                    candidate_kw = None
-                    for kw in expr.keywords:
-                        if kw.arg in ("inline_keyboard", "keyboard"):
-                            candidate_kw = kw.value
-                            break
-                    if not candidate_kw and expr.args:
-                        candidate_kw = expr.args[0]
-
-                    if candidate_kw:
-                        candidate_vals = [candidate_kw]
-                        if isinstance(candidate_kw, ast.Name) and candidate_kw.id in local_vars:
-                            candidate_vals = local_vars[candidate_kw.id]
-                        for val_node in candidate_vals:
-                            if isinstance(val_node, ast.List):
-                                for row_node in val_node.elts:
-                                    row = self._parse_button_row(row_node, local_vars, list_mutations)
-                                    if row:
-                                        rows.append(row)
-                        rows = self._deduplicate_rows(rows)
-                        if rows:
-                            return Keyboard(name=name, rows=rows, keyboard_type=kb_type, source_file=str(filepath), line_number=lineno)
-
-
-    def _parse_button_row(
-        self,
-        row_node: ast.AST,
-        local_vars: Dict[str, List[ast.AST]],
-        list_mutations: Optional[Dict[str, List[ast.AST]]] = None,
-    ) -> List[Button]:
-        row: List[Button] = []
-        if list_mutations is None:
-            list_mutations = {}
-
-        candidate_rows = [row_node]
-        row_var_id: Optional[str] = None
-        if isinstance(row_node, ast.Name):
-            row_var_id = row_node.id
-            if row_var_id in local_vars:
-                candidate_rows = local_vars[row_var_id]
-
-        for candidate in candidate_rows:
-            if isinstance(candidate, ast.ListComp):
-                # e.g. [KeyboardButton(text=item) for item in items]
-                elt_btn = self._parse_button_element(candidate.elt, local_vars)
-                if elt_btn:
-                    # Try resolving generator iterable if known
-                    iter_resolved = False
-                    if candidate.generators:
-                        iter_obj = getattr(candidate.generators[0], "iter", None)
-                        if isinstance(iter_obj, ast.Name):
-                            iter_name = iter_obj.id
-                            items_val = self.global_constants.get(iter_name)
-                            if isinstance(items_val, list):
-                                iter_resolved = True
-                                for item_str in items_val:
-                                    row.append(
-                                        Button(
-                                            text=str(item_str),
-                                            callback_data=elt_btn.callback_data,
-                                            url=elt_btn.url,
-                                            icon_custom_emoji_id=elt_btn.icon_custom_emoji_id,
-                                            style=elt_btn.style,
-                                        )
-                                    )
-                    if not iter_resolved:
-                        row.append(elt_btn)
-            elif isinstance(candidate, ast.List):
-                for elt in candidate.elts:
-                    candidate_elts = [elt]
-                    if isinstance(elt, ast.Name) and elt.id in local_vars:
-                        vars_list = local_vars[elt.id]
-                        if isinstance(vars_list, list) and vars_list:
-                            candidate_elts = list(vars_list)
-                        elif vars_list is not None:
-                            candidate_elts = [vars_list]
-                    for c_elt in candidate_elts:
-                        sub_elts = [c_elt.body, c_elt.orelse] if isinstance(c_elt, ast.IfExp) else [c_elt]
-                        for s_elt in sub_elts:
-                            btn = self._parse_button_element(s_elt, local_vars)
-                            if btn:
-                                row.append(btn)
-            elif isinstance(candidate, ast.Call):
-                btn = self._parse_helper_call(candidate)
-                if not btn:
-                    btn = self._parse_button_element(candidate, local_vars)
-                if btn:
-                    row.append(btn)
-            elif isinstance(candidate, ast.Dict):
-                btn = self._parse_button_element(candidate, local_vars)
-                if btn:
-                    row.append(btn)
-
-        # Include buttons dynamically appended to this row variable (e.g. action_row.append(cancel_btn))
-        if row_var_id and row_var_id in list_mutations:
-            for mut_elt in list_mutations[row_var_id]:
-                candidate_elts = [mut_elt]
-                if isinstance(mut_elt, ast.Name) and mut_elt.id in local_vars:
-                    vars_list = local_vars[mut_elt.id]
-                    if isinstance(vars_list, list) and vars_list:
-                        candidate_elts = list(vars_list)
-                    elif vars_list is not None:
-                        candidate_elts = [vars_list]
-                for c_elt in candidate_elts:
-                    sub_elts = [c_elt.body, c_elt.orelse] if isinstance(c_elt, ast.IfExp) else [c_elt]
-                    for s_elt in sub_elts:
-                        btn = self._parse_button_element(s_elt, local_vars)
-                        if btn:
-                            row.append(btn)
-
-        return row
-
-    def _parse_helper_call(self, call_node: ast.Call) -> Optional[Button]:
-        func_name = getattr(call_node.func, "attr", None) or getattr(call_node.func, "id", "")
-        f_lower = func_name.lower()
-        is_back = (
-            f_lower.startswith("back")
-            or f_lower.endswith(("_back", "_back_btn", "_back_button"))
-            or f_lower in ("back", "back_button", "back_btn", "btn_back", "get_back_button")
+        # 3. Direct/unambiguous fallback in dict storage
+        kb = (
+            dict.get(self.keyboards, kb_ref)
+            or dict.get(self.keyboards, self.keyboard_aliases.get(kb_ref, ""))
+            or dict.get(self.keyboards, kb_ref.split(".")[-1])
+            or dict.get(self.keyboards, kb_ref.lstrip("_"))
         )
-        if is_back:
-            target = "menu"
-            if call_node.args:
-                val = _ast_to_value(call_node.args[0], {}, self.global_constants)
-                if val:
-                    target = str(val).strip("'\"")
-            return Button(text="« Назад", callback_data=target, line_number=getattr(call_node, "lineno", None))
-        return None
-
-    def _parse_button_element(self, elt_node: ast.AST, local_vars: Optional[Dict[str, Any]] = None) -> Optional[Button]:
-        # Dictionary literal: {"text": "...", "callback_data": "..."}
-        if isinstance(elt_node, ast.Dict):
-            d: Dict[str, Any] = {}
-            for k, v in zip(elt_node.keys, elt_node.values):
-                if isinstance(k, ast.Constant):
-                    val = _ast_to_value(v, local_vars or {}, self.global_constants)
-                    d[str(k.value)] = val
-            text = str(d.get("text", "") or "Button")
-            cb = str(d.get("callback_data", "") or "") or None
-            url = str(d.get("url", "") or "") or None
-            icon_emoji = d.get("icon_custom_emoji_id")
-            if icon_emoji:
-                self.custom_emoji_ids.add(str(icon_emoji))
-            style = d.get("style")
-            return Button(
-                text=text,
-                callback_data=cb,
-                url=url,
-                icon_custom_emoji_id=str(icon_emoji) if icon_emoji is not None else None,
-                style=str(style) if style else None,
-                line_number=getattr(elt_node, "lineno", None),
-            )
-
-        # Call: InlineKeyboardButton(text="...", callback_data="...") or KeyboardButton(...)
-        if isinstance(elt_node, ast.Call):
-            kwargs: Dict[str, Any] = {}
-            for kw in elt_node.keywords:
-                val = _ast_to_value(kw.value, local_vars or {}, self.global_constants)
-                if val is None and isinstance(kw.value, ast.Call):
-                    # CallbackData factory call, e.g. NumbersCallbackFactory(action="change", value=-2)
-                    # or aiogram 3: NumbersCallbackFactory(action="change", value=-2).pack()
-                    call_node = kw.value
-                    if isinstance(call_node.func, ast.Attribute) and call_node.func.attr == "pack":
-                        if isinstance(call_node.func.value, ast.Call):
-                            call_node = call_node.func.value
-                    call_name = getattr(call_node.func, "attr", None) or getattr(call_node.func, "id", "")
-                    if call_name and call_name not in ("str", "int", "float", "len", "bool", "range", "pack"):
-                        action_val = ""
-                        for inner_kw in call_node.keywords:
-                            if inner_kw.arg in ("action", "act", "type"):
-                                inner_v = _ast_to_value(inner_kw.value, local_vars or {}, self.global_constants)
-                                action_val = f":{inner_v}" if inner_v else ""
-                        val = f"{call_name}{action_val}"
-                kwargs[kw.arg] = val
-
-            text_val = kwargs.get("text")
-            if not text_val and elt_node.args:
-                text_val = _ast_to_value(elt_node.args[0], local_vars or {}, self.global_constants)
-
-            cb_val = kwargs.get("callback_data")
-            if not cb_val and len(elt_node.args) > 1:
-                cb_val = _ast_to_value(elt_node.args[1], local_vars or {}, self.global_constants)
-
-            icon_emoji = kwargs.get("icon_custom_emoji_id")
-            if icon_emoji:
-                self.custom_emoji_ids.add(str(icon_emoji))
-            style_val = kwargs.get("style")
-
-            text = str(text_val or "Button")
-            cb = str(cb_val) if cb_val is not None else None
-            web_app_val = kwargs.get("web_app")
-            switch_inline_val = kwargs.get("switch_inline_query") or kwargs.get("switch_inline_query_current_chat")
-            pay_val = bool(kwargs.get("pay")) if "pay" in kwargs else None
-
-            return Button(
-                text=text,
-                callback_data=cb,
-                url=str(kwargs.get("url", "")) if kwargs.get("url") else None,
-                web_app=str(web_app_val) if web_app_val else None,
-                switch_inline_query=str(switch_inline_val) if switch_inline_val else None,
-                pay=pay_val,
-                icon_custom_emoji_id=str(icon_emoji) if icon_emoji is not None else None,
-                style=str(style_val) if style_val else None,
-                line_number=getattr(elt_node, "lineno", None),
-            )
-
-        return None
-
+        return kb
 
     def _extract_handlers(self, tree: ast.AST, filepath: Path) -> None:
         """Finds if-else blocks, match-case, or decorators handling callback_data or commands."""
@@ -683,7 +252,6 @@ class AstParser:
                 self._inspect_match_route(node, filepath)
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 self._inspect_decorated_handler(node, filepath)
-
 
     def _inspect_match_route(self, match_node: Any, filepath: Path) -> None:
         """Handles Python 3.10+ match ... case statements."""
@@ -793,12 +361,7 @@ class AstParser:
         # Attach resolved keyboard reference first, falling back to local inline keyboard
         resolved_kb = None
         if kb_ref:
-            resolved_kb = (
-                self.keyboards.get(kb_ref)
-                or self.keyboards.get(self.keyboard_aliases.get(kb_ref, ""))
-                or self.keyboards.get(kb_ref.split(".")[-1])
-                or self.keyboards.get(kb_ref.lstrip("_"))
-            )
+            resolved_kb = self.get_keyboard(kb_ref, source_file)
         if resolved_kb:
             node.keyboard = resolved_kb
         elif inline_kb and inline_kb.rows:
@@ -819,6 +382,7 @@ class AstParser:
 
     def _extract_route_conditions(self, test_node: ast.AST) -> List[Tuple[str, str]]:
         routes: List[Tuple[str, str]] = []
+        active_constants = self._get_constants_for_file()
 
         # Handle boolean combinations: if data == "a" or data == "b":
         if isinstance(test_node, ast.BoolOp):
@@ -829,11 +393,11 @@ class AstParser:
         # Case 1: Comparisons (==, in)
         if isinstance(test_node, ast.Compare):
             left_kind = _classify_operand_source(test_node.left)
-            left_val = _ast_to_value(test_node.left, {}, self.global_constants)
+            left_val = _ast_to_value(test_node.left, {}, active_constants)
 
             for op, comp in zip(test_node.ops, test_node.comparators):
                 comp_kind = _classify_operand_source(comp)
-                comp_val = _ast_to_value(comp, {}, self.global_constants)
+                comp_val = _ast_to_value(comp, {}, active_constants)
 
                 if isinstance(op, ast.Eq):
                     # Direct: target == "value"
@@ -850,7 +414,7 @@ class AstParser:
                     if left_kind:
                         if isinstance(comp, (ast.Set, ast.List, ast.Tuple)):
                             for elt in comp.elts:
-                                val = _ast_to_value(elt, {}, self.global_constants)
+                                val = _ast_to_value(elt, {}, active_constants)
                                 if val is not None:
                                     routes.append((str(val).strip("'\""), left_kind))
                     # Reverse: "a" in target
@@ -863,7 +427,7 @@ class AstParser:
                 val_node = test_node.func.value
                 val_kind = _classify_operand_source(val_node)
                 if val_kind and test_node.args:
-                    val = _ast_to_value(test_node.args[0], {}, self.global_constants)
+                    val = _ast_to_value(test_node.args[0], {}, active_constants)
                     if val is not None:
                         val_items = list(val) if isinstance(val, (tuple, list, set)) else [val]
                         for item in val_items:
@@ -877,89 +441,11 @@ class AstParser:
 
         return routes
 
-    def _specialize_keyboard_call(
-        self, call_node: ast.Call, kb_name: str, local_body_vars: Dict[str, Any]
-    ) -> str:
-        """If a parameterized keyboard function is called with custom string prefix arguments,
-        clone the keyboard with the substituted callback_data prefix.
-        """
-        base_kb = (
-            self.keyboards.get(kb_name)
-            or self.keyboards.get(self.keyboard_aliases.get(kb_name, ""))
-            or self.keyboards.get(kb_name.split(".")[-1])
-            or self.keyboards.get(kb_name.lstrip("_"))
-        )
-        if not base_kb:
-            return kb_name
-
-        param_info = self.keyboard_param_defaults.get(base_kb.name)
-        if not param_info:
-            return kb_name
-
-        substitutions: Dict[str, str] = {}
-        for idx, arg_node in enumerate(call_node.args):
-            if idx < len(param_info):
-                p_name, def_str = param_info[idx]
-                if def_str:
-                    passed = _ast_to_value(arg_node, local_body_vars, self.global_constants)
-                    if isinstance(passed, str) and passed and not passed.startswith("$") and passed != def_str:
-                        substitutions[def_str] = passed
-
-        param_dict = dict(param_info)
-        for kw in call_node.keywords:
-            if kw.arg and kw.arg in param_dict and param_dict[kw.arg]:
-                def_str = param_dict[kw.arg]
-                passed = _ast_to_value(kw.value, local_body_vars, self.global_constants)
-                if def_str and isinstance(passed, str) and passed and not passed.startswith("$") and passed != def_str:
-                    substitutions[def_str] = passed
-
-        if not substitutions:
-            return kb_name
-
-        suffix = "_".join(substitutions.values())
-        spec_name = f"{base_kb.name}:{suffix}"
-        if spec_name in self.keyboards:
-            return spec_name
-
-        new_rows: List[List[Button]] = []
-        changed = False
-        for row in base_kb.rows:
-            new_row: List[Button] = []
-            for btn in row:
-                new_cb = btn.callback_data
-                if new_cb:
-                    for old_s, new_s in substitutions.items():
-                        if old_s in new_cb:
-                            new_cb = new_cb.replace(old_s, new_s)
-                            changed = True
-                new_row.append(
-                    Button(
-                        text=btn.text,
-                        callback_data=new_cb,
-                        url=btn.url,
-                        icon_custom_emoji_id=btn.icon_custom_emoji_id,
-                        style=btn.style,
-                        line_number=btn.line_number,
-                    )
-                )
-            new_rows.append(new_row)
-
-        if not changed:
-            return kb_name
-
-        spec_kb = Keyboard(
-            name=spec_name,
-            rows=new_rows,
-            keyboard_type=base_kb.keyboard_type,
-            source_file=base_kb.source_file,
-            line_number=base_kb.line_number,
-        )
-        self.keyboards[spec_name] = spec_kb
-        return spec_name
-
     def _find_message_dispatch(
         self, body: List[ast.stmt], filepath: Path
     ) -> Tuple[str, Optional[str], Optional[Keyboard]]:
+        self._current_filepath = filepath
+        active_constants = self._get_constants_for_file(filepath)
         text_str = ""
         kb_name = None
         inline_kb: Optional[Keyboard] = None
@@ -976,7 +462,7 @@ class AstParser:
                     for target in sub.targets:
                         if isinstance(target, ast.Name):
                             local_body_nodes.setdefault(target.id, []).append(sub.value)
-                            val = _ast_to_value(sub.value, local_body_vars, self.global_constants)
+                            val = _ast_to_value(sub.value, local_body_vars, active_constants)
                             if val is not None and target.id not in local_body_vars:
                                 local_body_vars[target.id] = val
                             if isinstance(sub.value, ast.Call):
@@ -1000,7 +486,7 @@ class AstParser:
                                 if btn:
                                     builders[var_name].append(btn)
                     elif method == "adjust" and sub.args:
-                        adj_val = _ast_to_value(sub.args[0], local_body_vars, self.global_constants)
+                        adj_val = _ast_to_value(sub.args[0], local_body_vars, active_constants)
                         if isinstance(adj_val, int) and adj_val > 0:
                             builder_adjust[var_name] = adj_val
 
@@ -1024,7 +510,7 @@ class AstParser:
                         else:
                             is_toast = False
                         for arg in subnode.args:
-                            val = _ast_to_value(arg, local_body_vars, self.global_constants)
+                            val = _ast_to_value(arg, local_body_vars, active_constants)
                             if isinstance(val, str) and len(val) > 2 and not val.startswith("$"):
                                 if not is_toast and not text_str:
                                     text_str = val
@@ -1032,7 +518,7 @@ class AstParser:
                                     fallback_toast = val
                         for kw in subnode.keywords:
                             if kw.arg in ("text", "caption"):
-                                val = _ast_to_value(kw.value, local_body_vars, self.global_constants)
+                                val = _ast_to_value(kw.value, local_body_vars, active_constants)
                                 if isinstance(val, str) and val:
                                     if not is_toast and not text_str:
                                         text_str = val
@@ -1066,9 +552,13 @@ class AstParser:
                                                         if rows and not inline_kb:
                                                             b_type = builder_types.get(b_name, "inline")
                                                             inline_kb = Keyboard(name=f"inline_{lineno}", rows=rows, keyboard_type=b_type, source_file=str(filepath), line_number=lineno)
-                                                if c_func in self.keyboards or any(k.endswith(f".{c_func}") for k in self.keyboards) or c_func.lstrip("_") in self.keyboards:
+                                                if (
+                                                    self.get_keyboard(c_func, filepath) is not None
+                                                    or any(k.endswith(f".{c_func}") for k in self.keyboards)
+                                                    or c_func.lstrip("_") in self.keyboards
+                                                ):
                                                     if not kb_name:
-                                                        kb_name = self._specialize_keyboard_call(node_val, c_func, local_body_vars)
+                                                        kb_name = self._specialize_keyboard_call(node_val, c_func, local_body_vars, filepath)
                                                 elif any(k in c_func.lower() for k in ("markup", "keyboard")):
                                                     parsed_inline = self._parse_keyboard_expr(
                                                         node_val,
@@ -1080,9 +570,9 @@ class AstParser:
                                                     if parsed_inline and not inline_kb:
                                                         inline_kb = parsed_inline
                                                     elif not kb_name:
-                                                        kb_name = self._specialize_keyboard_call(node_val, c_func, local_body_vars)
+                                                        kb_name = self._specialize_keyboard_call(node_val, c_func, local_body_vars, filepath)
                                                 elif not kb_name:
-                                                    kb_name = self._specialize_keyboard_call(node_val, c_func, local_body_vars)
+                                                    kb_name = self._specialize_keyboard_call(node_val, c_func, local_body_vars, filepath)
                                             else:
                                                 parsed_inline = self._parse_keyboard_expr(
                                                     node_val,
@@ -1099,7 +589,7 @@ class AstParser:
                                     attr_name = kw.value.attr
                                     val_obj = getattr(kw.value.value, "id", "")
                                     full_name = f"{val_obj}.{attr_name}" if val_obj else attr_name
-                                    if full_name in self.keyboards:
+                                    if self.get_keyboard(full_name, filepath) is not None:
                                         kb_name = kb_name or full_name
                                     else:
                                         kb_name = kb_name or attr_name
@@ -1115,9 +605,12 @@ class AstParser:
                                             if rows and not inline_kb:
                                                 b_type = builder_types.get(b_name, "inline")
                                                 inline_kb = Keyboard(name=f"inline_{lineno}", rows=rows, keyboard_type=b_type, source_file=str(filepath), line_number=lineno)
-                                    elif c_func in self.keyboards or c_func.lstrip("_") in self.keyboards:
+                                    elif (
+                                        self.get_keyboard(c_func, filepath) is not None
+                                        or c_func.lstrip("_") in self.keyboards
+                                    ):
                                         if not kb_name:
-                                            kb_name = self._specialize_keyboard_call(kw.value, c_func, local_body_vars)
+                                            kb_name = self._specialize_keyboard_call(kw.value, c_func, local_body_vars, filepath)
                                     elif any(k in c_func for k in ("InlineKeyboardMarkup", "ReplyKeyboardMarkup")):
                                         parsed_inline = self._parse_keyboard_expr(
                                             kw.value,
@@ -1218,7 +711,6 @@ class AstParser:
                             kb_ref=kb_ref,
                             inline_kb=inline_kb,
                         )
-
 
     def _extract_set_my_commands(self, tree: ast.AST, filepath: Path) -> None:
         """Extracts bot commands registered in set_my_commands / setMyCommands calls."""

@@ -15,11 +15,16 @@ class HtmlVisualizer:
         """Renders an interactive, standalone single-file HTML visualization."""
         html_template_file = self.templates_dir / "viewer.html"
         css_file = self.templates_dir / "viewer.css"
+        core_js_file = self.templates_dir / "viewer_core.js"
+        ui_js_file = self.templates_dir / "viewer_ui.js"
         js_file = self.templates_dir / "viewer.js"
 
         html_template = html_template_file.read_text(encoding="utf-8")
         css_content = css_file.read_text(encoding="utf-8")
-        js_content = js_file.read_text(encoding="utf-8")
+        if core_js_file.exists() and ui_js_file.exists():
+            js_content = f"{core_js_file.read_text(encoding='utf-8')}\n{ui_js_file.read_text(encoding='utf-8')}"
+        else:
+            js_content = js_file.read_text(encoding="utf-8")
 
         # Escape </ to prevent premature </script> closing and DOM XSS in browser HTML parser
         data_json = json.dumps(self.bot_map.to_dict(), ensure_ascii=False).replace("</", "<\\/")

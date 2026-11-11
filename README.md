@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-brightgreen.svg)]()
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)]()
-[![Tests: 274 passed](https://img.shields.io/badge/tests-278%20passed-brightgreen.svg)]()
+[![Tests: 280 passed](https://img.shields.io/badge/tests-280%20passed-brightgreen.svg)]()
 
 `tg-flowmap` — комплексный инженерный инструмент для аудита, визуализации и сравнения Telegram-ботов:
 1. **SAST (Static AST)**: сканирует исходный код вашего бота **без запуска**, находит тупики, битые коллбеки, забытые команды меню и нарушения спецификации Telegram Bot API за 50 мс без единой зависимости.
@@ -140,4 +140,4 @@ tg-flowmap compare path/to/my_bot @competitor_bot
 ```bash
 pytest tests -v
 ```
-**278 тестов** (SAST, DAST, Safety, State, Regression), включая проверку кодов завершения DAST и сохранения отчётов при ошибке или прерывании.
+**280 тестов** (SAST, DAST, Safety, State, Regression), включая проверку кодов завершения DAST и сохранения отчётов при ошибке или прерывании.
