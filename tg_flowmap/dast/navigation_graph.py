@@ -79,15 +79,19 @@ class NavigationGraph:
         
         edges_data = self.state.graph_edges_all(self.bot)
         for e in edges_data:
+            obs_raw = e.get("observations_count")
+            succ_raw = e.get("success_count")
+            fail_raw = e.get("failure_count")
+            conf_raw = e.get("confidence")
             edge = EdgeInfo(
                 source_screen_id=e["source_screen_id"],
                 action_id=e["action_id"],
                 destination_screen_id=e["destination_screen_id"],
                 result_type=e.get("result_type", "edit"),
-                observations_count=int(e.get("observations_count") or 1),
-                success_count=int(e.get("success_count") or 1),
-                failure_count=int(e.get("failure_count") or 0),
-                confidence=float(e.get("confidence") or 1.0),
+                observations_count=1 if obs_raw is None else int(obs_raw),
+                success_count=1 if succ_raw is None else int(succ_raw),
+                failure_count=0 if fail_raw is None else int(fail_raw),
+                confidence=1.0 if conf_raw is None else float(conf_raw),
                 is_stable=bool(e.get("is_stable", 1)),
                 first_observed_at=e.get("first_observed_at", _utcnow()),
                 last_observed_at=e.get("last_observed_at", _utcnow()),

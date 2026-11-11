@@ -89,18 +89,29 @@ def evaluate_ast_node(
         return None
 
     if isinstance(node, ast.BoolOp):
+        def _is_unresolved(val: Any) -> bool:
+            return val is None or (isinstance(val, str) and val.startswith("$"))
+
         if isinstance(node.op, ast.Or):
+            last_known = None
+            has_unresolved = False
             for val_node in node.values:
                 v = evaluate_ast_node(val_node, local_vars, global_vars, depth + 1, max_depth)
-                if v is not None and v != "" and not str(v).startswith("$"):
+                if _is_unresolved(v):
+                    has_unresolved = True
+                    continue
+                last_known = v
+                if bool(v):
                     return v
-            return None
+            return None if has_unresolved else last_known
         if isinstance(node.op, ast.And):
             last_v = None
             for val_node in node.values:
                 v = evaluate_ast_node(val_node, local_vars, global_vars, depth + 1, max_depth)
-                if v is None or v == "" or str(v).startswith("$"):
+                if _is_unresolved(v):
                     return None
+                if not bool(v):
+                    return v
                 last_v = v
             return last_v
 

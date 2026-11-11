@@ -115,3 +115,38 @@ async def handle_user(call):
 
         assert user_node.keyboard is not None
         assert user_node.keyboard.rows[0][0].callback_data == "user:view"
+
+
+def test_failed_edge_preserves_zero_values_after_reload():
+    from tg_flowmap.dast.navigation_graph import NavigationGraph
+    from tg_flowmap.dast.state import State
+
+    state = State(":memory:")
+    try:
+        graph = NavigationGraph("@assessment", state)
+        edge = graph.record_transition("source", "action", "target", success=False)
+        before = (edge.confidence, edge.success_count)
+        reloaded = NavigationGraph("@assessment", state).edges[("source", "action", "target")]
+        assert (reloaded.confidence, reloaded.success_count) == before
+    finally:
+        state.close()
+
+
+def test_false_boolean_branch_does_not_create_admin_callback(tmp_path):
+    path = tmp_path / "sample.py"
+    path.write_text(
+        '''
+SHOW_ADMIN = False
+def keyboard():
+    return {"inline_keyboard": [[{
+        "text": "Open",
+        "callback_data": "admin" if SHOW_ADMIN and True else "user"
+    }]]}
+''',
+        encoding="utf-8",
+    )
+    parser = AstParser()
+    parser.parse_file(path)
+    buttons = parser.keyboards["keyboard"].all_buttons()
+    assert [button.callback_data for button in buttons] == ["user"]
+
