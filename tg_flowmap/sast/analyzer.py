@@ -407,6 +407,11 @@ class GraphAnalyzer:
         if f"cb:{cb}" in self.screen_aliases:
             return self.screen_aliases[f"cb:{cb}"], "ok"
 
+        # Direct command match (e.g. callback_data="start", "/start", "help")
+        cmd_candidate = f"cmd:/{cb.lstrip('/')}"
+        if cmd_candidate in self.nodes:
+            return cmd_candidate, "ok"
+
         # Alias match
         for node_id, node in self.nodes.items():
             if hasattr(node, "aliases") and (cb in node.aliases or f"/{cb}" in node.aliases or f"cb:{cb}" in node.aliases):

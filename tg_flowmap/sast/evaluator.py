@@ -26,6 +26,8 @@ def evaluate_ast_node(
     if isinstance(node, ast.UnaryOp):
         val = evaluate_ast_node(node.operand, local_vars, global_vars, depth + 1, max_depth)
         if isinstance(node.op, ast.Not):
+            if val is None or (isinstance(val, str) and val.startswith("$")):
+                return None
             return not val
         if isinstance(node.op, ast.USub) and isinstance(val, (int, float)):
             return -val
@@ -36,10 +38,30 @@ def evaluate_ast_node(
     if isinstance(node, ast.BinOp):
         left = evaluate_ast_node(node.left, local_vars, global_vars, depth + 1, max_depth)
         right = evaluate_ast_node(node.right, local_vars, global_vars, depth + 1, max_depth)
-        if isinstance(node.op, ast.Mult) and isinstance(left, str) and isinstance(right, int):
-            return left * right
-        if isinstance(node.op, ast.Add) and isinstance(left, str) and isinstance(right, str):
-            return left + right
+        if isinstance(node.op, ast.Mult):
+            if isinstance(left, str) and isinstance(right, int):
+                return left * right
+            if isinstance(left, int) and isinstance(right, str):
+                return right * left
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                return left * right
+        elif isinstance(node.op, ast.Add):
+            if isinstance(left, str) and isinstance(right, str):
+                return left + right
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                return left + right
+        elif isinstance(node.op, ast.Sub):
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                return left - right
+        elif isinstance(node.op, ast.FloorDiv):
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)) and right != 0:
+                return left // right
+        elif isinstance(node.op, ast.Div):
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)) and right != 0:
+                return left / right
+        elif isinstance(node.op, ast.Mod):
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)) and right != 0:
+                return left % right
 
     if isinstance(node, ast.JoinedStr):
         parts = []

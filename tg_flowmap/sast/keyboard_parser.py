@@ -38,6 +38,20 @@ class KeyboardStore(dict):
         return default
 
 
+def _unwind_call_chain(call_node: ast.Call) -> Tuple[Optional[str], List[Tuple[str, ast.Call]]]:
+    """Unwinds a method call chain like `builder.button(...).button(...).adjust(...)`
+    into the root variable name and ordered list of (method_name, call_node).
+    """
+    chain: List[Tuple[str, ast.Call]] = []
+    curr: ast.AST = call_node
+    while isinstance(curr, ast.Call) and isinstance(curr.func, ast.Attribute):
+        chain.append((curr.func.attr, curr))
+        curr = curr.func.value
+    if isinstance(curr, ast.Name):
+        return curr.id, list(reversed(chain))
+    return None, []
+
+
 class KeyboardParserMixin:
     """Mixin extracting, resolving, and specializing Telegram keyboards from AST."""
 
@@ -161,27 +175,26 @@ class KeyboardParserMixin:
                             elif "inline" in call_name.lower():
                                 builder_types[target.id] = "inline"
             elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
-                call = stmt.value
-                if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name):
-                    var_name = call.func.value.id
-                    method = call.func.attr
-                    if method in ("append", "extend") and call.args:
-                        list_mutations.setdefault(var_name, []).append(call.args[0])
-                    elif method in ("add", "button", "row"):
-                        builders.setdefault(var_name, [])
-                        if method == "button":
-                            btn = self._parse_button_element(call, local_vars)
-                            if btn:
-                                builders[var_name].append(btn)
-                        else:
-                            for arg in call.args:
-                                btn = self._parse_button_element(arg, local_vars)
+                var_name, chain = _unwind_call_chain(stmt.value)
+                if var_name:
+                    for method, call in chain:
+                        if method in ("append", "extend") and call.args:
+                            list_mutations.setdefault(var_name, []).append(call.args[0])
+                        elif method in ("add", "button", "row"):
+                            builders.setdefault(var_name, [])
+                            if method == "button":
+                                btn = self._parse_button_element(call, local_vars)
                                 if btn:
                                     builders[var_name].append(btn)
-                    elif method == "adjust" and call.args:
-                        adj_val = _ast_to_value(call.args[0], local_vars, active_constants)
-                        if isinstance(adj_val, int) and adj_val > 0:
-                            builder_adjust[var_name] = adj_val
+                            else:
+                                for arg in call.args:
+                                    btn = self._parse_button_element(arg, local_vars)
+                                    if btn:
+                                        builders[var_name].append(btn)
+                        elif method == "adjust" and call.args:
+                            adj_val = _ast_to_value(call.args[0], local_vars, active_constants)
+                            if isinstance(adj_val, int) and adj_val > 0:
+                                builder_adjust[var_name] = adj_val
 
         # Check return statements
         for stmt in ast.walk(func_node):
@@ -196,7 +209,27 @@ class KeyboardParserMixin:
                     if getattr(stmt.value.func, "attr", "") == "as_markup":
                         b_obj = getattr(stmt.value.func, "value", None)
                         b_name = getattr(b_obj, "id", "")
-                        if b_name in builders and builders[b_name]:
+                        if not b_name and isinstance(b_obj, ast.Call):
+                            root_id, chain = _unwind_call_chain(b_obj)
+                            if root_id:
+                                b_name = root_id
+                                for method, call in chain:
+                                    if method in ("add", "button", "row"):
+                                        builders.setdefault(b_name, [])
+                                        if method == "button":
+                                            btn = self._parse_button_element(call, local_vars)
+                                            if btn:
+                                                builders[b_name].append(btn)
+                                        else:
+                                            for arg in call.args:
+                                                btn = self._parse_button_element(arg, local_vars)
+                                                if btn:
+                                                    builders[b_name].append(btn)
+                                    elif method == "adjust" and call.args:
+                                        adj_val = _ast_to_value(call.args[0], local_vars, active_constants)
+                                        if isinstance(adj_val, int) and adj_val > 0:
+                                            builder_adjust[b_name] = adj_val
+                        if b_name and b_name in builders and builders[b_name]:
                             btn_list = builders[b_name]
                             adj = builder_adjust.get(b_name, len(btn_list))
                             rows = [btn_list[i : i + adj] for i in range(0, len(btn_list), adj)]
@@ -228,14 +261,14 @@ class KeyboardParserMixin:
 
     @staticmethod
     def _deduplicate_rows(rows: List[List[Button]]) -> List[List[Button]]:
-        seen: Set[Tuple[Optional[str], Optional[str], Optional[str]]] = set()
         deduped: List[List[Button]] = []
         for row in rows:
             clean_row: List[Button] = []
+            seen_in_row: Set[Tuple[Optional[str], Optional[str], Optional[str]]] = set()
             for btn in row:
                 key = (btn.text, btn.callback_data, btn.url)
-                if key not in seen:
-                    seen.add(key)
+                if key not in seen_in_row:
+                    seen_in_row.add(key)
                     clean_row.append(btn)
             if clean_row:
                 deduped.append(clean_row)
@@ -445,7 +478,8 @@ class KeyboardParserMixin:
                 if isinstance(k, ast.Constant):
                     val = _ast_to_value(v, local_vars or {}, active_constants)
                     d[str(k.value)] = val
-            text = str(d.get("text", "") or "Button")
+            d_text = d.get("text")
+            text = str(d_text) if (d_text is not None and d_text != "") else "Button"
             cb = str(d.get("callback_data", "") or "") or None
             url = str(d.get("url", "") or "") or None
             icon_emoji = d.get("icon_custom_emoji_id")
@@ -484,11 +518,11 @@ class KeyboardParserMixin:
                 kwargs[kw.arg] = val
 
             text_val = kwargs.get("text")
-            if not text_val and elt_node.args:
+            if text_val is None and elt_node.args:
                 text_val = _ast_to_value(elt_node.args[0], local_vars or {}, active_constants)
 
             cb_val = kwargs.get("callback_data")
-            if not cb_val and len(elt_node.args) > 1:
+            if cb_val is None and len(elt_node.args) > 1:
                 cb_val = _ast_to_value(elt_node.args[1], local_vars or {}, active_constants)
 
             icon_emoji = kwargs.get("icon_custom_emoji_id")
@@ -496,7 +530,7 @@ class KeyboardParserMixin:
                 self.custom_emoji_ids.add(str(icon_emoji))
             style_val = kwargs.get("style")
 
-            text = str(text_val or "Button")
+            text = str(text_val) if (text_val is not None and text_val != "") else "Button"
             cb = str(cb_val) if cb_val is not None else None
             web_app_val = kwargs.get("web_app")
             switch_inline_val = kwargs.get("switch_inline_query") or kwargs.get("switch_inline_query_current_chat")

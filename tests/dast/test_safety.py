@@ -111,3 +111,38 @@ def test_manual_answers_exact_and_regex():
     assert SafetyFilter.manual_answer(answers, "@bot", "Укажите количество товара") == "1"
     assert SafetyFilter.manual_answer(answers, "@bot", "Другой текст") is None
     assert SafetyFilter.manual_answer(answers, "@other", "Введите email:") is None
+
+
+def test_danger_word_word_boundaries():
+    """Verify danger words require word boundaries to avoid false positives on words like Urban, Preset, Banner."""
+    s = make_safety()
+
+    # Substrings inside words should NOT trigger danger word
+    ok_urban, reason_urban = s.button_verdict("Urban styles", "callback", "Menu")
+    assert ok_urban is True
+    assert reason_urban is None
+
+    ok_preset, reason_preset = s.button_verdict("Preset options", "callback", "Menu")
+    assert ok_preset is True
+    assert reason_preset is None
+
+    ok_banner, reason_banner = s.button_verdict("Banner ad", "callback", "Menu")
+    assert ok_banner is True
+    assert reason_banner is None
+
+    # Exact danger words with word boundaries MUST be blocked
+    ok_ban, reason_ban = s.button_verdict("Ban user", "callback", "Menu")
+    assert ok_ban is False
+    assert reason_ban == "danger_word:ban"
+
+    ok_reset, reason_reset = s.button_verdict("Reset settings", "callback", "Menu")
+    assert ok_reset is False
+    assert reason_reset == "danger_word:reset"
+
+    # Callback data word boundary check
+    ok_cb_preset, _ = s.button_verdict("Options", "callback", "Menu", callback_data="preset_select")
+    assert ok_cb_preset is True
+
+    ok_cb_ban, reason_cb_ban = s.button_verdict("Action", "callback", "Menu", callback_data="admin_ban_user")
+    assert ok_cb_ban is False
+    assert reason_cb_ban == "danger_callback_word:ban"

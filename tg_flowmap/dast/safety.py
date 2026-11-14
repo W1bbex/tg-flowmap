@@ -57,6 +57,10 @@ class SafetyFilter:
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.danger_words = [_norm(w) for w in cfg.danger_words if w]
+        self.danger_patterns = [
+            (w, re.compile(r'(?:\b|_|^)' + re.escape(w) + r'(?:\b|_|$)', re.UNICODE))
+            for w in self.danger_words if w
+        ]
         self.checkout_words = [_norm(w) for w in cfg.checkout_words if w]
         self.back_words = [_norm(w) for w in cfg.back_words if w]
         self.safe_nav_words = {_norm(w) for w in cfg.safe_nav_words if w}
@@ -68,6 +72,14 @@ class SafetyFilter:
         self.payment_instruction_words = [_norm(w) for w in PAYMENT_INSTRUCTION_WORDS]
         self.cancel_words = [_norm(w) for w in CANCEL_WORDS]
         self.input_prompt_words = [_norm(w) for w in INPUT_PROMPT_WORDS]
+
+    def find_danger_word(self, text: str) -> str | None:
+        if not text:
+            return None
+        for word, pat in self.danger_patterns:
+            if pat.search(text):
+                return word
+        return None
 
     # ------------------------------------------------------------------ экран
     def screen_context(self, screen_text: str) -> dict:
@@ -123,8 +135,7 @@ class SafetyFilter:
             return False, "empty_label"
 
         # Цена + слово-действие в одной кнопке — самое опасное
-        if self.price_re.search(lnorm) and any(
-                w and w in lnorm for w in self.danger_words):
+        if self.price_re.search(lnorm) and self.find_danger_word(lnorm):
             return False, "price_with_action_word"
 
         ctx = self.screen_context(screen_text)
@@ -152,7 +163,7 @@ class SafetyFilter:
             elif isinstance(callback_data, str):
                 cb_text = callback_data
             cbnorm = _norm(cb_text)
-            cb_danger = next((w for w in self.danger_words if w and w in cbnorm), None)
+            cb_danger = self.find_danger_word(cbnorm)
             if cb_danger:
                 return False, f"danger_callback_word:{cb_danger}"
             for pat in self.blocked_patterns:
@@ -164,7 +175,7 @@ class SafetyFilter:
             return True, None
 
         # --- мягкие блоки ------------------------------------------------------
-        danger_hit = next((w for w in self.danger_words if w and w in lnorm), None)
+        danger_hit = self.find_danger_word(lnorm)
         if danger_hit:
             return False, f"danger_word:{danger_hit}"
 

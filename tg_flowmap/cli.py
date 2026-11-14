@@ -215,13 +215,12 @@ def run_dast_scan(
     output_dir: Path | None = None,
     config_path: Path | None = None,
 ) -> int:
-    try:
-        import asyncio
-        import telethon
-    except ImportError as e:
+    import asyncio
+    import importlib.util
+    if importlib.util.find_spec("telethon") is None:
         print(
             f"[ERROR] Для DAST режима требуется Telethon.\n"
-            f"Установите зависимость: pip install \"tg-flowmap[dast]\"\n({e})",
+            f'Установите зависимость: pip install "tg-flowmap[dast]"',
             file=sys.stderr,
         )
         return 1
@@ -342,8 +341,8 @@ def _load_target_data(target: str, out_dir: Path) -> dict:
                 },
                 "screens": screens_list,
             }
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[WARN] Ошибка загрузки данных графа из {cand}: {e}", file=sys.stderr)
     return {"metrics": {"screens_count": 0, "buttons_count": 0, "dead_ends": 0, "missing_back": 0}, "screens": []}
 
 

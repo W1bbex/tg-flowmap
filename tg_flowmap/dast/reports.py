@@ -301,11 +301,15 @@ def build_report_md(cfg: Config, state: State, bot: str) -> str:
     lines.append("")
 
     premium_by_screen: dict[str, set[str]] = defaultdict(set)
-    for occ in state.emoji_occurrences_all(bot):
-        row = state._query_one(
-            "SELECT screen_id FROM messages WHERE id=?", (occ["message_rowid"],))
-        if row and row["screen_id"]:
-            premium_by_screen[row["screen_id"]].add(occ["document_id"])
+    emoji_rows = state._query(
+        "SELECT eo.document_id, m.screen_id FROM emoji_occurrences eo "
+        "JOIN messages m ON eo.message_rowid = m.id "
+        "WHERE eo.bot=? AND m.screen_id IS NOT NULL",
+        (bot,),
+    )
+    for row in emoji_rows:
+        if row["screen_id"]:
+            premium_by_screen[row["screen_id"]].add(row["document_id"])
 
     for s in sorted(screens, key=lambda x: (x["depth_min"], x["id"])):
         sid = s["screen_id"]

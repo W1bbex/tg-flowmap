@@ -28,6 +28,27 @@ def test_evaluator_unary_not():
     node_not_str = ast.parse("not 'hello'", mode="eval").body
     assert evaluate_ast_node(node_not_str) is False
 
+    # Неразрешенные динамические переменные ($var) не должны сворачиваться в False
+    node_not_var = ast.parse("not is_admin", mode="eval").body
+    assert evaluate_ast_node(node_not_var) is None
+
+    node_not_call = ast.parse("not check_access()", mode="eval").body
+    assert evaluate_ast_node(node_not_call) is None
+
+
+def test_evaluator_binop_arithmetic():
+    """Проверка целочисленной и строковой арифметики в бинарных операциях."""
+    assert evaluate_ast_node(ast.parse("5 * 2", mode="eval").body) == 10
+    assert evaluate_ast_node(ast.parse("10 + 5", mode="eval").body) == 15
+    assert evaluate_ast_node(ast.parse("20 - 7", mode="eval").body) == 13
+    assert evaluate_ast_node(ast.parse("15 // 4", mode="eval").body) == 3
+    assert evaluate_ast_node(ast.parse("10 / 2", mode="eval").body) == 5.0
+    assert evaluate_ast_node(ast.parse("14 % 5", mode="eval").body) == 4
+    assert evaluate_ast_node(ast.parse("3 * 'abc'", mode="eval").body) == "abcabcabc"
+    assert evaluate_ast_node(ast.parse("'abc' * 2", mode="eval").body) == "abcabc"
+    assert evaluate_ast_node(ast.parse("'foo' + 'bar'", mode="eval").body) == "foobar"
+    assert evaluate_ast_node(ast.parse("10 // 0", mode="eval").body) is None
+
 
 def test_evaluator_unhashable_types_graceful_handling():
     """Проверка, что нехэшируемые типы (list, dict) не роняют evaluate_ast_node с TypeError."""

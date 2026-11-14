@@ -482,7 +482,21 @@ def handle_config_action() -> None:
         run_telegram_config_wizard(cfg_file)
     elif action == "open":
         if not cfg_file.exists():
-            shutil.copy(SCRIPT_DIR / "config.example.json", cfg_file)
+            example_path = SCRIPT_DIR / "config.example.json"
+            if example_path.exists():
+                shutil.copy(example_path, cfg_file)
+            else:
+                cfg_file.write_text(
+                    json.dumps({
+                        "api_id": 0,
+                        "api_hash": "YOUR_TELEGRAM_API_HASH",
+                        "session_name": "market_research",
+                        "bots": [],
+                        "delay_min": 2.0,
+                        "delay_max": 5.0,
+                    }, indent=2),
+                    encoding="utf-8"
+                )
         if sys.platform == "win32":
             os.startfile(cfg_file)
         elif sys.platform == "darwin":
@@ -585,13 +599,18 @@ def wait_for_exit() -> None:
         pass
 
 
+RESERVED_CLI_COMMANDS = {
+    "sast", "code", "scan", "dast", "crawl", "bot", "compare", "diff", "bench", "demo", "config"
+}
+
+
 def main() -> None:
     if len(sys.argv) > 1:
         first_arg = sys.argv[1].strip().strip('"').strip("'")
         target_path = clean_input_path(first_arg)
 
         # If user dragged & dropped a valid file/directory onto run.bat
-        if target_path and not first_arg.startswith("-"):
+        if target_path and not first_arg.startswith("-") and first_arg.lower() not in RESERVED_CLI_COMMANDS:
             try:
                 execute_sast_scan(target_path)
             except (KeyboardInterrupt, EOFError):

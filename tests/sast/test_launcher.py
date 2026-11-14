@@ -46,20 +46,32 @@ def test_execute_sast_scan_generates_artifacts(tmp_path: Path):
 
 
 def test_interactive_menu_exit():
-    with patch("builtins.input", side_effect=["0"]):
-        # Must exit cleanly without throwing exceptions
+    with patch("builtins.input", side_effect=["0"]) as mock_input:
         interactive_menu()
+        assert mock_input.call_count == 1
 
 
 def test_interactive_menu_demo():
-    with patch("builtins.input", side_effect=["4"]), patch("webbrowser.open"):
+    with patch("builtins.input", side_effect=["4", "0"]), patch("run.handle_demo_action") as mock_demo:
         interactive_menu()
+        mock_demo.assert_called_once()
 
 
 def test_main_with_drag_and_drop_argument():
     demo_path = Path(__file__).resolve().parent.parent.parent / "examples" / "sample_bot.py"
-    with patch.object(sys, "argv", ["run.py", str(demo_path)]), patch("webbrowser.open"):
+    with patch.object(sys, "argv", ["run.py", str(demo_path)]), patch("run.execute_sast_scan") as mock_sast, patch("run.wait_for_exit"):
         main()
+        mock_sast.assert_called_once_with(demo_path.resolve())
+
+
+def test_main_with_reserved_cli_command_delegates_to_cli(tmp_path: Path, monkeypatch):
+    """Verify reserved CLI subcommands are not hijacked by drag-and-drop even if folder exists."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "sast").mkdir()  # Directory named 'sast' exists in CWD
+
+    with patch.object(sys, "argv", ["run.py", "sast", "bot.py"]), patch("tg_flowmap.cli.main") as mock_cli:
+        main()
+        mock_cli.assert_called_once()
 
 
 def test_is_telethon_configured(tmp_path: Path):

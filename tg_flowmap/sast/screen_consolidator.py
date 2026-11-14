@@ -39,6 +39,8 @@ class ScreenConsolidatorMixin:
                         break
 
                 if target_screen:
+                    if not target_screen.keyboard and node.keyboard:
+                        target_screen.keyboard = node.keyboard
                     cmd_alias = f"/{cmd_clean}"
                     if cmd_alias not in target_screen.aliases:
                         target_screen.aliases.append(cmd_alias)

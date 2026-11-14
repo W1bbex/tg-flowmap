@@ -176,3 +176,42 @@ def test_safety_menu_with_colon_not_requires_input():
         pressable_labels=["Отмена", "Назад"],
     )
     assert is_input_cancel is True
+
+
+def test_resolve_target_matches_registered_command():
+    """Verify _resolve_target resolves buttons with callback_data matching registered commands."""
+    from tg_flowmap.core.models import MessageNode
+    from tg_flowmap.sast.analyzer import GraphAnalyzer
+
+    nodes = {
+        "cmd:/start": MessageNode(id="cmd:/start", title="Start", text_template="Welcome"),
+        "cmd:/help": MessageNode(id="cmd:/help", title="Help", text_template="Help text"),
+    }
+    analyzer = GraphAnalyzer(nodes=nodes, keyboards={})
+
+    target_start, status_start = analyzer._resolve_target("start")
+    assert target_start == "cmd:/start"
+    assert status_start == "ok"
+
+    target_slash_help, status_help = analyzer._resolve_target("/help")
+    assert target_slash_help == "cmd:/help"
+    assert status_help == "ok"
+
+
+def test_consolidate_preserves_source_keyboard():
+    """Verify screen consolidation preserves the keyboard when merging into a callback node lacking one."""
+    from tg_flowmap.core.models import Button, Keyboard, MessageNode
+    from tg_flowmap.sast.parser import AstParser
+
+    parser = AstParser()
+    kb = Keyboard(name="kb_settings", rows=[[Button(text="Opt", callback_data="opt")]])
+    parser.nodes["cmd:/settings"] = MessageNode(id="cmd:/settings", title="Settings", text_template="Cfg", keyboard=kb)
+    parser.nodes["cb:settings_menu"] = MessageNode(id="cb:settings_menu", title="Settings Menu", text_template="Menu", keyboard=None)
+
+    parser._consolidate_duplicate_screens()
+
+    assert "cb:settings_menu" in parser.nodes
+    assert parser.nodes["cb:settings_menu"].keyboard is not None
+    assert parser.nodes["cb:settings_menu"].keyboard.name == "kb_settings"
+    assert "/settings" in parser.nodes["cb:settings_menu"].aliases
+    assert "cmd:/settings" not in parser.nodes

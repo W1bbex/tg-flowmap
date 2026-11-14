@@ -7,9 +7,9 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from tg_flowmap.core.models import Keyboard, MessageNode
+from tg_flowmap.core.models import Button, Keyboard, MessageNode
 from tg_flowmap.sast.evaluator import _ast_to_value, extract_module_constants
-from tg_flowmap.sast.keyboard_parser import KeyboardParserMixin, KeyboardStore
+from tg_flowmap.sast.keyboard_parser import KeyboardParserMixin, KeyboardStore, _unwind_call_chain
 from tg_flowmap.sast.screen_consolidator import ScreenConsolidatorMixin
 
 __all__ = [
@@ -152,7 +152,8 @@ class AstParser(KeyboardParserMixin, ScreenConsolidatorMixin):
             self.reset()
         try:
             content = filepath.read_text(encoding="utf-8", errors="replace")
-        except Exception:
+        except (OSError, UnicodeDecodeError) as e:
+            self.skipped_files.append((filepath, f"{type(e).__name__}: {e}"))
             return
 
         try:
@@ -417,6 +418,10 @@ class AstParser(KeyboardParserMixin, ScreenConsolidatorMixin):
                                 val = _ast_to_value(elt, {}, active_constants)
                                 if val is not None:
                                     routes.append((str(val).strip("'\""), left_kind))
+                        elif isinstance(comp_val, (set, list, tuple)):
+                            for item in comp_val:
+                                if item is not None:
+                                    routes.append((str(item).strip("'\""), left_kind))
                     # Reverse: "a" in target
                     elif comp_kind and left_val is not None:
                         routes.append((str(left_val).strip("'\""), comp_kind))
@@ -471,24 +476,25 @@ class AstParser(KeyboardParserMixin, ScreenConsolidatorMixin):
                                     builder_types[target.id] = "reply"
                                 elif "inline" in call_fn.lower():
                                     builder_types[target.id] = "inline"
-                elif isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) and isinstance(sub.func.value, ast.Name):
-                    var_name = sub.func.value.id
-                    method = sub.func.attr
-                    if method in ("add", "button", "row"):
-                        builders.setdefault(var_name, [])
-                        if method == "button":
-                            btn = self._parse_button_element(sub, local_body_vars)
-                            if btn:
-                                builders[var_name].append(btn)
-                        else:
-                            for arg in sub.args:
-                                btn = self._parse_button_element(arg, local_body_vars)
-                                if btn:
-                                    builders[var_name].append(btn)
-                    elif method == "adjust" and sub.args:
-                        adj_val = _ast_to_value(sub.args[0], local_body_vars, active_constants)
-                        if isinstance(adj_val, int) and adj_val > 0:
-                            builder_adjust[var_name] = adj_val
+                elif isinstance(sub, ast.Expr) and isinstance(sub.value, ast.Call):
+                    var_name, chain = _unwind_call_chain(sub.value)
+                    if var_name:
+                        for method, call in chain:
+                            if method in ("add", "button", "row"):
+                                builders.setdefault(var_name, [])
+                                if method == "button":
+                                    btn = self._parse_button_element(call, local_body_vars)
+                                    if btn:
+                                        builders[var_name].append(btn)
+                                else:
+                                    for arg in call.args:
+                                        btn = self._parse_button_element(arg, local_body_vars)
+                                        if btn:
+                                            builders[var_name].append(btn)
+                            elif method == "adjust" and call.args:
+                                adj_val = _ast_to_value(call.args[0], local_body_vars, active_constants)
+                                if isinstance(adj_val, int) and adj_val > 0:
+                                    builder_adjust[var_name] = adj_val
 
         fallback_toast: Optional[str] = None
         for stmt in body:
@@ -545,6 +551,26 @@ class AstParser(KeyboardParserMixin, ScreenConsolidatorMixin):
                                                 if c_func == "as_markup":
                                                     b_obj = getattr(node_val.func, "value", None)
                                                     b_name = getattr(b_obj, "id", "")
+                                                    if not b_name and isinstance(b_obj, ast.Call):
+                                                        root_id, chain = _unwind_call_chain(b_obj)
+                                                        if root_id:
+                                                            b_name = root_id
+                                                            for method, call in chain:
+                                                                if method in ("add", "button", "row"):
+                                                                    builders.setdefault(b_name, [])
+                                                                    if method == "button":
+                                                                        btn = self._parse_button_element(call, local_body_vars)
+                                                                        if btn:
+                                                                            builders[b_name].append(btn)
+                                                                    else:
+                                                                        for arg in call.args:
+                                                                            btn = self._parse_button_element(arg, local_body_vars)
+                                                                            if btn:
+                                                                                builders[b_name].append(btn)
+                                                                elif method == "adjust" and call.args:
+                                                                    adj_val = _ast_to_value(call.args[0], local_body_vars, active_constants)
+                                                                    if isinstance(adj_val, int) and adj_val > 0:
+                                                                        builder_adjust[b_name] = adj_val
                                                     if b_name in builders and builders[b_name]:
                                                         btn_list = builders[b_name]
                                                         adj = builder_adjust.get(b_name, len(btn_list))
