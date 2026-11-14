@@ -1,7 +1,363 @@
 from __future__ import annotations
 
 import ast
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
+
+
+def _is_unresolved(val: Any) -> bool:
+    return val is None or (isinstance(val, str) and val.startswith("$"))
+
+
+def _eval_constant(
+    node: ast.Constant,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    return node.value
+
+
+def _eval_unary_op(
+    node: ast.UnaryOp,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    val = evaluate_ast_node(node.operand, local_vars, global_vars, depth + 1, max_depth)
+    if isinstance(node.op, ast.Not):
+        if val is None or (isinstance(val, str) and val.startswith("$")):
+            return None
+        return not val
+    if isinstance(node.op, ast.USub) and isinstance(val, (int, float)):
+        return -val
+    if isinstance(node.op, ast.UAdd) and isinstance(val, (int, float)):
+        return +val
+    return val
+
+
+def _eval_bin_op(
+    node: ast.BinOp,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    left = evaluate_ast_node(node.left, local_vars, global_vars, depth + 1, max_depth)
+    right = evaluate_ast_node(node.right, local_vars, global_vars, depth + 1, max_depth)
+    if isinstance(node.op, ast.Mult):
+        if isinstance(left, str) and isinstance(right, int):
+            return left * right
+        if isinstance(left, int) and isinstance(right, str):
+            return right * left
+        if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+            return left * right
+    elif isinstance(node.op, ast.Add):
+        if isinstance(left, str) and isinstance(right, str):
+            return left + right
+        if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+            return left + right
+    elif isinstance(node.op, ast.Sub):
+        if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+            return left - right
+    elif isinstance(node.op, ast.FloorDiv):
+        if isinstance(left, (int, float)) and isinstance(right, (int, float)) and right != 0:
+            return left // right
+    elif isinstance(node.op, ast.Div):
+        if isinstance(left, (int, float)) and isinstance(right, (int, float)) and right != 0:
+            return left / right
+    elif isinstance(node.op, ast.Mod):
+        if isinstance(left, (int, float)) and isinstance(right, (int, float)) and right != 0:
+            return left % right
+    return None
+
+
+def _eval_joined_str(
+    node: ast.JoinedStr,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    parts = []
+    for part in node.values:
+        if isinstance(part, ast.Constant):
+            parts.append(str(part.value))
+        elif isinstance(part, ast.FormattedValue):
+            val = evaluate_ast_node(part.value, local_vars, global_vars, depth + 1, max_depth)
+            if val is not None and str(val) != "" and not str(val).startswith("$"):
+                parts.append(str(val))
+            else:
+                parts.append("*")
+        else:
+            parts.append("*")
+    return "".join(parts)
+
+
+def _eval_if_exp(
+    node: ast.IfExp,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    test_val = evaluate_ast_node(node.test, local_vars, global_vars, depth + 1, max_depth)
+    body_val = evaluate_ast_node(node.body, local_vars, global_vars, depth + 1, max_depth)
+    orelse_val = evaluate_ast_node(node.orelse, local_vars, global_vars, depth + 1, max_depth)
+    if test_val is not None and not str(test_val).startswith("$"):
+        return body_val if bool(test_val) else orelse_val
+    if body_val == orelse_val and body_val is not None:
+        return body_val
+    return None
+
+
+def _eval_compare(
+    node: ast.Compare,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    left = evaluate_ast_node(node.left, local_vars, global_vars, depth + 1, max_depth)
+    if len(node.ops) == 1 and len(node.comparators) == 1:
+        op = node.ops[0]
+        right = evaluate_ast_node(node.comparators[0], local_vars, global_vars, depth + 1, max_depth)
+        if left is not None and right is not None and not str(left).startswith("$") and not str(right).startswith("$"):
+            if isinstance(op, ast.Eq):
+                return left == right
+            if isinstance(op, ast.NotEq):
+                return left != right
+            if isinstance(op, ast.In):
+                try:
+                    return left in right
+                except TypeError:
+                    pass
+            if isinstance(op, ast.NotIn):
+                try:
+                    return left not in right
+                except TypeError:
+                    pass
+    return None
+
+
+def _eval_bool_op(
+    node: ast.BoolOp,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    if isinstance(node.op, ast.Or):
+        last_known = None
+        has_unresolved = False
+        for val_node in node.values:
+            v = evaluate_ast_node(val_node, local_vars, global_vars, depth + 1, max_depth)
+            if _is_unresolved(v):
+                has_unresolved = True
+                continue
+            last_known = v
+            if bool(v):
+                return v
+        return None if has_unresolved else last_known
+    if isinstance(node.op, ast.And):
+        last_v = None
+        for val_node in node.values:
+            v = evaluate_ast_node(val_node, local_vars, global_vars, depth + 1, max_depth)
+            if _is_unresolved(v):
+                return None
+            if not bool(v):
+                return v
+            last_v = v
+        return last_v
+    return None
+
+
+def _eval_name(
+    node: ast.Name,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    if local_vars and node.id in local_vars:
+        val = local_vars[node.id]
+        if isinstance(val, list) and val and isinstance(val[0], ast.AST):
+            val = val[-1]
+        if isinstance(val, ast.AST):
+            return evaluate_ast_node(val, local_vars, global_vars, depth + 1, max_depth)
+        return val
+    if global_vars and node.id in global_vars:
+        val = global_vars[node.id]
+        if isinstance(val, list) and val and isinstance(val[0], ast.AST):
+            val = val[-1]
+        if isinstance(val, ast.AST):
+            return evaluate_ast_node(val, local_vars, global_vars, depth + 1, max_depth)
+        return val
+    return f"${node.id}"
+
+
+def _eval_attribute(
+    node: ast.Attribute,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    parent_val = evaluate_ast_node(node.value, local_vars, global_vars, depth + 1, max_depth)
+    if parent_val and isinstance(parent_val, str) and parent_val.startswith("$"):
+        return f"{parent_val}.{node.attr}"
+    return f"${node.attr}"
+
+
+def _eval_call(
+    node: ast.Call,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    # Support dict.get(key, default) lookup (e.g. ICONS.get("sound"))
+    if isinstance(node.func, ast.Attribute) and node.func.attr == "get":
+        dict_obj = evaluate_ast_node(node.func.value, local_vars, global_vars, depth + 1, max_depth)
+        if isinstance(dict_obj, dict) and node.args:
+            key = evaluate_ast_node(node.args[0], local_vars, global_vars, depth + 1, max_depth)
+            default = None
+            if len(node.args) > 1:
+                default = evaluate_ast_node(node.args[1], local_vars, global_vars, depth + 1, max_depth)
+            for kw in node.keywords:
+                if kw.arg == "default":
+                    default = evaluate_ast_node(kw.value, local_vars, global_vars, depth + 1, max_depth)
+            try:
+                return dict_obj.get(key, default)
+            except TypeError:
+                return default
+
+    # Support dict(other_dict)
+    if isinstance(node.func, ast.Name) and node.func.id == "dict" and node.args:
+        arg_val = evaluate_ast_node(node.args[0], local_vars, global_vars, depth + 1, max_depth)
+        if isinstance(arg_val, dict):
+            return dict(arg_val)
+
+    # Support str(x), int(x), float(x)
+    if isinstance(node.func, ast.Name) and node.func.id in ("str", "int", "float") and node.args:
+        arg_val = evaluate_ast_node(node.args[0], local_vars, global_vars, depth + 1, max_depth)
+        if arg_val is not None and not str(arg_val).startswith("$"):
+            if node.func.id == "int":
+                try:
+                    return int(arg_val)
+                except (ValueError, TypeError):
+                    pass
+            elif node.func.id == "float":
+                try:
+                    return float(arg_val)
+                except (ValueError, TypeError):
+                    pass
+            return str(arg_val)
+        arg_id = getattr(node.args[0], "id", "") or getattr(node.args[0], "attr", "")
+        return f"{{{arg_id}}}" if arg_id else "N"
+
+    return None
+
+
+def _eval_dict(
+    node: ast.Dict,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    d = {}
+    for k, v in zip(node.keys, node.values):
+        if k is None:
+            unpacked = evaluate_ast_node(v, local_vars, global_vars, depth + 1, max_depth)
+            if isinstance(unpacked, dict):
+                d.update(unpacked)
+        else:
+            key_val = evaluate_ast_node(k, local_vars, global_vars, depth + 1, max_depth)
+            if key_val is not None:
+                d[str(key_val)] = evaluate_ast_node(v, local_vars, global_vars, depth + 1, max_depth)
+    return d
+
+
+def _eval_list(
+    node: ast.List,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    return [evaluate_ast_node(elt, local_vars, global_vars, depth + 1, max_depth) for elt in node.elts]
+
+
+def _eval_tuple(
+    node: ast.Tuple,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    return tuple(evaluate_ast_node(elt, local_vars, global_vars, depth + 1, max_depth) for elt in node.elts)
+
+
+def _eval_set(
+    node: ast.Set,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    return set(evaluate_ast_node(elt, local_vars, global_vars, depth + 1, max_depth) for elt in node.elts)
+
+
+def _eval_subscript(
+    node: ast.Subscript,
+    local_vars: Dict[str, Any],
+    global_vars: Dict[str, Any],
+    depth: int,
+    max_depth: int,
+) -> Any:
+    val = evaluate_ast_node(node.value, local_vars, global_vars, depth + 1, max_depth)
+    slice_node = node.slice
+    if hasattr(ast, "Index") and isinstance(slice_node, ast.Index):
+        slice_node = slice_node.value
+    key = evaluate_ast_node(slice_node, local_vars, global_vars, depth + 1, max_depth)
+
+    if isinstance(val, dict):
+        try:
+            if key in val:
+                return val[key]
+            if str(key) in val:
+                return val[str(key)]
+        except TypeError:
+            return None
+    elif isinstance(val, (list, tuple)) and isinstance(key, int):
+        try:
+            return val[key]
+        except IndexError:
+            return None
+    elif isinstance(val, str) and val.startswith("$"):
+        return f"{val}[{key}]"
+    return None
+
+
+NODE_EVALUATORS: Dict[type, Callable[..., Any]] = {
+    ast.Constant: _eval_constant,
+    ast.UnaryOp: _eval_unary_op,
+    ast.BinOp: _eval_bin_op,
+    ast.JoinedStr: _eval_joined_str,
+    ast.IfExp: _eval_if_exp,
+    ast.Compare: _eval_compare,
+    ast.BoolOp: _eval_bool_op,
+    ast.Name: _eval_name,
+    ast.Attribute: _eval_attribute,
+    ast.Call: _eval_call,
+    ast.Dict: _eval_dict,
+    ast.List: _eval_list,
+    ast.Tuple: _eval_tuple,
+    ast.Set: _eval_set,
+    ast.Subscript: _eval_subscript,
+}
 
 
 def evaluate_ast_node(
@@ -20,236 +376,9 @@ def evaluate_ast_node(
     if global_vars is None:
         global_vars = {}
 
-    if isinstance(node, ast.Constant):
-        return node.value
-
-    if isinstance(node, ast.UnaryOp):
-        val = evaluate_ast_node(node.operand, local_vars, global_vars, depth + 1, max_depth)
-        if isinstance(node.op, ast.Not):
-            if val is None or (isinstance(val, str) and val.startswith("$")):
-                return None
-            return not val
-        if isinstance(node.op, ast.USub) and isinstance(val, (int, float)):
-            return -val
-        if isinstance(node.op, ast.UAdd) and isinstance(val, (int, float)):
-            return +val
-        return val
-
-    if isinstance(node, ast.BinOp):
-        left = evaluate_ast_node(node.left, local_vars, global_vars, depth + 1, max_depth)
-        right = evaluate_ast_node(node.right, local_vars, global_vars, depth + 1, max_depth)
-        if isinstance(node.op, ast.Mult):
-            if isinstance(left, str) and isinstance(right, int):
-                return left * right
-            if isinstance(left, int) and isinstance(right, str):
-                return right * left
-            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
-                return left * right
-        elif isinstance(node.op, ast.Add):
-            if isinstance(left, str) and isinstance(right, str):
-                return left + right
-            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
-                return left + right
-        elif isinstance(node.op, ast.Sub):
-            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
-                return left - right
-        elif isinstance(node.op, ast.FloorDiv):
-            if isinstance(left, (int, float)) and isinstance(right, (int, float)) and right != 0:
-                return left // right
-        elif isinstance(node.op, ast.Div):
-            if isinstance(left, (int, float)) and isinstance(right, (int, float)) and right != 0:
-                return left / right
-        elif isinstance(node.op, ast.Mod):
-            if isinstance(left, (int, float)) and isinstance(right, (int, float)) and right != 0:
-                return left % right
-
-    if isinstance(node, ast.JoinedStr):
-        parts = []
-        for part in node.values:
-            if isinstance(part, ast.Constant):
-                parts.append(str(part.value))
-            elif isinstance(part, ast.FormattedValue):
-                val = evaluate_ast_node(part.value, local_vars, global_vars, depth + 1, max_depth)
-                if val is not None and str(val) != "" and not str(val).startswith("$"):
-                    parts.append(str(val))
-                else:
-                    parts.append("*")
-            else:
-                parts.append("*")
-        return "".join(parts)
-
-    if isinstance(node, ast.IfExp):
-        test_val = evaluate_ast_node(node.test, local_vars, global_vars, depth + 1, max_depth)
-        body_val = evaluate_ast_node(node.body, local_vars, global_vars, depth + 1, max_depth)
-        orelse_val = evaluate_ast_node(node.orelse, local_vars, global_vars, depth + 1, max_depth)
-        if test_val is not None and not str(test_val).startswith("$"):
-            return body_val if bool(test_val) else orelse_val
-        if body_val == orelse_val and body_val is not None:
-            return body_val
-        return None
-
-    if isinstance(node, ast.Compare):
-        left = evaluate_ast_node(node.left, local_vars, global_vars, depth + 1, max_depth)
-        if len(node.ops) == 1 and len(node.comparators) == 1:
-            op = node.ops[0]
-            right = evaluate_ast_node(node.comparators[0], local_vars, global_vars, depth + 1, max_depth)
-            if left is not None and right is not None and not str(left).startswith("$") and not str(right).startswith("$"):
-                if isinstance(op, ast.Eq):
-                    return left == right
-                if isinstance(op, ast.NotEq):
-                    return left != right
-                if isinstance(op, ast.In):
-                    try:
-                        return left in right
-                    except TypeError:
-                        pass
-                if isinstance(op, ast.NotIn):
-                    try:
-                        return left not in right
-                    except TypeError:
-                        pass
-        return None
-
-    if isinstance(node, ast.BoolOp):
-        def _is_unresolved(val: Any) -> bool:
-            return val is None or (isinstance(val, str) and val.startswith("$"))
-
-        if isinstance(node.op, ast.Or):
-            last_known = None
-            has_unresolved = False
-            for val_node in node.values:
-                v = evaluate_ast_node(val_node, local_vars, global_vars, depth + 1, max_depth)
-                if _is_unresolved(v):
-                    has_unresolved = True
-                    continue
-                last_known = v
-                if bool(v):
-                    return v
-            return None if has_unresolved else last_known
-        if isinstance(node.op, ast.And):
-            last_v = None
-            for val_node in node.values:
-                v = evaluate_ast_node(val_node, local_vars, global_vars, depth + 1, max_depth)
-                if _is_unresolved(v):
-                    return None
-                if not bool(v):
-                    return v
-                last_v = v
-            return last_v
-
-    if isinstance(node, ast.Name):
-        if local_vars and node.id in local_vars:
-            val = local_vars[node.id]
-            # Only unwrap if variable was tracked across assignments as a list of AST nodes
-            if isinstance(val, list) and val and isinstance(val[0], ast.AST):
-                val = val[-1]
-            if isinstance(val, ast.AST):
-                return evaluate_ast_node(val, local_vars, global_vars, depth + 1, max_depth)
-            return val
-        if global_vars and node.id in global_vars:
-            val = global_vars[node.id]
-            if isinstance(val, list) and val and isinstance(val[0], ast.AST):
-                val = val[-1]
-            if isinstance(val, ast.AST):
-                return evaluate_ast_node(val, local_vars, global_vars, depth + 1, max_depth)
-            return val
-        return f"${node.id}"
-
-    if isinstance(node, ast.Attribute):
-        parent_val = evaluate_ast_node(node.value, local_vars, global_vars, depth + 1, max_depth)
-        if parent_val and isinstance(parent_val, str) and parent_val.startswith("$"):
-            return f"{parent_val}.{node.attr}"
-        return f"${node.attr}"
-
-    if isinstance(node, ast.Call):
-        # Support dict.get(key, default) lookup (e.g. ICONS.get("sound"))
-        if isinstance(node.func, ast.Attribute) and node.func.attr == "get":
-            dict_obj = evaluate_ast_node(node.func.value, local_vars, global_vars, depth + 1, max_depth)
-            if isinstance(dict_obj, dict) and node.args:
-                key = evaluate_ast_node(node.args[0], local_vars, global_vars, depth + 1, max_depth)
-                default = None
-                if len(node.args) > 1:
-                    default = evaluate_ast_node(node.args[1], local_vars, global_vars, depth + 1, max_depth)
-                for kw in node.keywords:
-                    if kw.arg == "default":
-                        default = evaluate_ast_node(kw.value, local_vars, global_vars, depth + 1, max_depth)
-                try:
-                    return dict_obj.get(key, default)
-                except TypeError:
-                    return default
-
-        # Support dict(other_dict)
-        if isinstance(node.func, ast.Name) and node.func.id == "dict" and node.args:
-            arg_val = evaluate_ast_node(node.args[0], local_vars, global_vars, depth + 1, max_depth)
-            if isinstance(arg_val, dict):
-                return dict(arg_val)
-
-        # Support str(x), int(x), float(x)
-        if isinstance(node.func, ast.Name) and node.func.id in ("str", "int", "float") and node.args:
-            arg_val = evaluate_ast_node(node.args[0], local_vars, global_vars, depth + 1, max_depth)
-            if arg_val is not None and not str(arg_val).startswith("$"):
-                if node.func.id == "int":
-                    try:
-                        return int(arg_val)
-                    except (ValueError, TypeError):
-                        pass
-                elif node.func.id == "float":
-                    try:
-                        return float(arg_val)
-                    except (ValueError, TypeError):
-                        pass
-                return str(arg_val)
-            arg_id = getattr(node.args[0], "id", "") or getattr(node.args[0], "attr", "")
-            return f"{{{arg_id}}}" if arg_id else "N"
-
-        return None
-
-    if isinstance(node, ast.Dict):
-        d = {}
-        for k, v in zip(node.keys, node.values):
-            if k is None:
-                unpacked = evaluate_ast_node(v, local_vars, global_vars, depth + 1, max_depth)
-                if isinstance(unpacked, dict):
-                    d.update(unpacked)
-            else:
-                key_val = evaluate_ast_node(k, local_vars, global_vars, depth + 1, max_depth)
-                if key_val is not None:
-                    d[str(key_val)] = evaluate_ast_node(v, local_vars, global_vars, depth + 1, max_depth)
-        return d
-
-    if isinstance(node, ast.List):
-        return [evaluate_ast_node(elt, local_vars, global_vars, depth + 1, max_depth) for elt in node.elts]
-
-    if isinstance(node, ast.Tuple):
-        return tuple(evaluate_ast_node(elt, local_vars, global_vars, depth + 1, max_depth) for elt in node.elts)
-
-    if isinstance(node, ast.Set):
-        return set(evaluate_ast_node(elt, local_vars, global_vars, depth + 1, max_depth) for elt in node.elts)
-
-    if isinstance(node, ast.Subscript):
-        val = evaluate_ast_node(node.value, local_vars, global_vars, depth + 1, max_depth)
-        slice_node = node.slice
-        if hasattr(ast, "Index") and isinstance(slice_node, ast.Index):
-            slice_node = slice_node.value
-        key = evaluate_ast_node(slice_node, local_vars, global_vars, depth + 1, max_depth)
-
-        if isinstance(val, dict):
-            try:
-                if key in val:
-                    return val[key]
-                if str(key) in val:
-                    return val[str(key)]
-            except TypeError:
-                return None
-        elif isinstance(val, (list, tuple)) and isinstance(key, int):
-            try:
-                return val[key]
-            except IndexError:
-                return None
-        elif isinstance(val, str) and val.startswith("$"):
-            return f"{val}[{key}]"
-        return None
-
+    evaluator = NODE_EVALUATORS.get(type(node))
+    if evaluator is not None:
+        return evaluator(node, local_vars, global_vars, depth, max_depth)
     return None
 
 
