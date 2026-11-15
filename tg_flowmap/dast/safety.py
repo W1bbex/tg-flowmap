@@ -15,7 +15,7 @@ WALLET_REGEXES = [
     re.compile(r"0x[0-9a-fA-F]{40}"),
     re.compile(r"\bT[1-9A-HJ-NP-Za-km-z]{33}\b"),        # TRON / USDT TRC20
     re.compile(r"\bbc1[a-z0-9]{20,60}\b", re.IGNORECASE),               # Bitcoin bech32
-    re.compile(r"\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b", re.IGNORECASE),  # Bitcoin legacy
+    re.compile(r"\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b"),                 # Bitcoin legacy
     re.compile(r"\b[EU]Q[0-9a-zA-Z_-]{46}\b"),                          # TON / Telegram Open Network
 ]
 PAYMENT_INSTRUCTION_WORDS = [

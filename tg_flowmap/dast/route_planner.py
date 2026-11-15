@@ -33,7 +33,7 @@ class RoutePlanner:
         bot: str,
         graph: NavigationGraph,
         recovery_start_cost: float = 3.0,
-        edge_confidence_threshold: float = 0.6,
+        edge_confidence_threshold: float = 0.2,
         max_replans_per_target: int = 2,
         frontier_strategy: str = "graph_locality",
     ):

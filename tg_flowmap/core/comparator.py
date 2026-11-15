@@ -54,8 +54,14 @@ class BotComparator:
                 for n in node_iterable
                 if isinstance(n, dict)
             )
-            dead_ends = sum(1 for iss in issues if iss.get("issue_type") == "dead_end")
-            missing_back = sum(1 for iss in issues if iss.get("issue_type") == "missing_back")
+            dead_ends = sum(
+                1 for iss in issues
+                if (iss.get("issue_type") if isinstance(iss, dict) else getattr(iss, "issue_type", "")) == "dead_end"
+            )
+            missing_back = sum(
+                1 for iss in issues
+                if (iss.get("issue_type") if isinstance(iss, dict) else getattr(iss, "issue_type", "")) == "missing_back"
+            )
             return {
                 "screens_count": screens_count,
                 "buttons_count": buttons_count,

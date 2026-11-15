@@ -716,7 +716,7 @@ const ICON_SYMBOLS = {
       // Whitelist safe Telegram markdown/HTML formatting tags
       res = res
         .replace(/&lt;(\/)?(b|i|code|pre|s|u|tg-spoiler)&gt;/gi, '<$1$2>')
-        .replace(/&lt;a\s+href=(&quot;|&#039;)(https?:\/\/[^&]+)\1&gt;(.*?)&lt;\/a&gt;/gi, '<a href="$2" target="_blank" rel="noopener">$3</a>');
+        .replace(/&lt;a\s+href=(&quot;|&#039;)(https?:\/\/(?:(?!\1)[^>])+?)\1&gt;(.*?)&lt;\/a&gt;/gi, '<a href="$2" target="_blank" rel="noopener">$3</a>');
       // Restore cached Telegram premium emojis with verified data URIs
       if (rawData.custom_emojis) {
         res = res.replace(/__TG_EMOJI_(\d+)__/g, (match, id) => {

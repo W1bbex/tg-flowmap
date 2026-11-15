@@ -8,19 +8,26 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from tg_flowmap.core.comparator import BotComparator
+from tg_flowmap.core.models import Issue
+from tg_flowmap.core.llm_exporter import generate_llm_benchmark_prompt
 from tg_flowmap.dast.auth import create_client
 from tg_flowmap.dast.capture import extract_buttons
 from tg_flowmap.dast.config import Config
-from tg_flowmap.dast.crawler import BotCrawler
+from tg_flowmap.dast.crawler import BotCrawler, AbortScan
+from tg_flowmap.dast.map_render import _render_map_mmd
 from tg_flowmap.dast.models import ButtonRef, CallbackResult, PressOutcome
 from tg_flowmap.dast.navigation_graph import NavigationGraph
+from tg_flowmap.dast.ratelimit import GlobalLimiter
 from tg_flowmap.dast.safety import SafetyFilter, WALLET_REGEXES
 from tg_flowmap.dast.screen_identity import buttons_signature, match_button_instance
 from tg_flowmap.dast.state import State
 from tg_flowmap.dast.timeline_log import ActionLogger, TimelineWriter
-from tg_flowmap.dast.utf16 import utf16_length
+from tg_flowmap.dast.tl_serial import clean
+from tg_flowmap.dast.utf16 import utf16_length, utf16_offset_of_char
 from tg_flowmap.sast.analyzer import GraphAnalyzer
 from tg_flowmap.sast.emoji import fetch_custom_emojis, load_cached_emoji
+from tg_flowmap.sast.keyboard_parser import _unwind_call_chain
+from tg_flowmap.sast.parser import AstParser
 import run
 
 
@@ -197,9 +204,12 @@ def test_crawler_continue_on_stale_button(tmp_path: Path) -> None:
         )
 
         item = {"screen_id": "screen_1", "path": [], "depth": 1}
-        await crawler._explore(item)
-
-        assert nav.press_button.call_count == 1
+        try:
+            await crawler._explore(item)
+            assert nav.press_button.call_count == 1
+        finally:
+            writer.close()
+            state.close()
 
     asyncio.run(_run())
 
@@ -207,16 +217,19 @@ def test_crawler_continue_on_stale_button(tmp_path: Path) -> None:
 def test_navigation_graph_persists_unstable_edges_to_sqlite(tmp_path: Path) -> None:
     db_file = tmp_path / "state.db"
     state = State(db_file)
-    graph = NavigationGraph(state=state, bot="test_bot")
+    try:
+        graph = NavigationGraph(state=state, bot="test_bot")
 
-    graph.record_transition("scr_a", "act_1", "scr_b", "edit", success=True)
-    graph.record_transition("scr_a", "act_1", "scr_c", "edit", success=True)
+        graph.record_transition("scr_a", "act_1", "scr_b", "edit", success=True)
+        graph.record_transition("scr_a", "act_1", "scr_c", "edit", success=True)
 
-    edges_in_db = state.graph_edges_all("test_bot")
-    assert len(edges_in_db) == 2
-    for e in edges_in_db:
-        assert e["is_stable"] == 0
-        assert e["confidence"] <= 0.5
+        edges_in_db = state.graph_edges_all("test_bot")
+        assert len(edges_in_db) == 2
+        for e in edges_in_db:
+            assert e["is_stable"] == 0
+            assert e["confidence"] <= 0.5
+    finally:
+        state.close()
 
 
 def test_comparator_dast_routing_and_screens_fallback(tmp_path: Path) -> None:
@@ -352,5 +365,207 @@ def test_navigator_send_text_masks_secret_in_timeline(tmp_path: Path):
         assert "[скрыто, длина" in raw_jsonl
     finally:
         state.close()
+
+
+def test_global_limiter_ticket_leaky_bucket():
+    """Verifies that GlobalLimiter calculates intervals without holding lock during sleep."""
+    limiter = GlobalLimiter(min_interval=0.05)
+
+    async def _worker():
+        t0 = asyncio.get_event_loop().time()
+        await limiter.acquire()
+        t1 = asyncio.get_event_loop().time()
+        return t1 - t0
+
+    async def _main():
+        results = await asyncio.gather(_worker(), _worker(), _worker())
+        return results
+
+    delays = asyncio.run(_main())
+    assert len(delays) == 3
+    assert delays[0] < 0.04
+    assert delays[1] >= 0.04
+
+
+def test_ast_parser_bot_command_list_variable(tmp_path: Path):
+    """Verifies set_my_commands correctly extracts commands from variable lists."""
+    bot_code = """
+COMMANDS = [
+    BotCommand("start", "Запуск бота"),
+    BotCommand("help", "Помощь"),
+]
+
+async def on_startup(bot):
+    await bot.set_my_commands(COMMANDS)
+"""
+    file_path = tmp_path / "bot_cmds.py"
+    file_path.write_text(bot_code, encoding="utf-8")
+
+    parser = AstParser()
+    parser.parse_file(file_path)
+    assert parser.has_set_my_commands is True
+    assert "start" in parser.registered_menu_commands
+    assert "help" in parser.registered_menu_commands
+
+
+def test_keyboard_parser_chained_builder_call():
+    """Verifies _unwind_call_chain extracts method calls from anonymous builder expressions."""
+    import ast
+    code = ast.parse("InlineKeyboardBuilder().button(text='OK', callback_data='ok').as_markup()")
+    call_node = code.body[0].value
+    root_id, chain = _unwind_call_chain(call_node.func.value)
+    assert root_id is not None
+    assert "InlineKeyboardBuilder" in root_id
+    assert len(chain) == 1
+    assert chain[0][0] == "button"
+
+
+def test_keyboard_parser_falsy_zero_callback_data():
+    """Verifies that integer/string '0' callback_data is preserved and not converted to None."""
+    import ast
+    parser = AstParser()
+    dict_ast = ast.parse("{'text': '0', 'callback_data': 0}").body[0].value
+    btn = parser._parse_button_element(dict_ast)
+    assert btn is not None
+    assert btn.callback_data == "0"
+    assert btn.text == "0"
+
+
+def test_crawler_circuit_breaker_resets_only_on_success(tmp_path: Path):
+    """Verifies that _bump_action does not reset _consecutive_errors and circuit breaker fires."""
+    cfg = Config()
+    cfg.max_consecutive_errors = 3
+    state = State(tmp_path / "cb_state.db")
+    try:
+        writer = TimelineWriter(tmp_path / "cb_timeline.jsonl")
+        try:
+            logger = ActionLogger(state, writer)
+            safety = SafetyFilter(cfg)
+            crawler = BotCrawler(cfg, state, logger, safety, MagicMock(), {}, "test_bot")
+
+            crawler._bump_errors()
+            crawler._bump_action()  # Must NOT reset _consecutive_errors
+            assert crawler._consecutive_errors == 1
+
+            crawler._bump_errors()
+            crawler._bump_action()
+            assert crawler._consecutive_errors == 2
+
+            with pytest.raises(AbortScan, match="too many consecutive errors"):
+                crawler._bump_errors()
+        finally:
+            writer.close()
+    finally:
+        state.close()
+
+
+def test_comparator_metrics_with_issue_dataclass():
+    """Verifies extract_metrics_from_bot_map works when issues list contains Issue dataclasses."""
+    issue1 = Issue(issue_type="dead_end", severity="warning", message="dead end test")
+    issue2 = Issue(issue_type="missing_back", severity="info", message="missing back test")
+    bot_map = {
+        "nodes": {"start": {"keyboard": {"rows": []}}},
+        "issues": [issue1, issue2],
+    }
+    metrics = BotComparator.extract_metrics_from_bot_map(bot_map)
+    assert metrics["dead_ends"] == 1
+    assert metrics["missing_back"] == 1
+
+
+def test_llm_exporter_extracts_buttons_from_keyboard_rows():
+    """Verifies that screens with keyboard.rows extract button text in llm benchmark prompt."""
+    screens = {
+        "scr_1": {
+            "title": "Main Menu",
+            "keyboard": {
+                "rows": [
+                    [{"text": "Каталог", "callback_data": "cat"}, {"text": "Помощь", "callback_data": "help"}],
+                ]
+            },
+        }
+    }
+    prompt = generate_llm_benchmark_prompt(
+        bot_a_name="BotA",
+        bot_a_metrics={"screens_count": 1, "buttons_count": 2},
+        bot_b_name="BotB",
+        bot_b_metrics={},
+        bot_a_screens=screens,
+    )
+    assert "Каталог, Помощь" in prompt
+    assert "нет кнопок" not in prompt
+
+
+def test_map_render_escapes_brackets_in_node_title():
+    """Verifies Mermaid map generation replaces brackets in node titles."""
+    nodes = [{"id": "s1", "text_norm": "[1] Выберите опцию"}]
+    edges = [{"source": "s1", "target": "s2", "label": "[Далее]"}]
+    mmd = _render_map_mmd("test_bot", nodes, edges)
+    assert 's1["s1<br/>(1) Выберите опцию"]' in mmd
+    assert '|"(Далее)"|' in mmd
+
+
+def test_safety_bitcoin_legacy_base58_strict():
+    """Verifies Bitcoin legacy regex does not match strings containing 0, O, I, l."""
+    btc_regex = WALLET_REGEXES[3]
+    valid_btc = "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+    assert btc_regex.search(valid_btc) is not None
+
+    invalid_with_l = "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNl"
+    assert btc_regex.search(invalid_with_l) is None
+
+    invalid_with_o = "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNO"
+    assert btc_regex.search(invalid_with_o) is None
+
+
+def test_state_messages_all_batch_queries(tmp_path: Path):
+    """Verifies State.messages_all loads entities and media correctly using batch queries."""
+    db_path = tmp_path / "batch_state.db"
+    state = State(db_path)
+    try:
+        state._exec(
+            "INSERT INTO messages (id, bot, chat_id, message_id, event_type, captured_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (1, "my_bot", 100, 1, "new", "2026-01-01T00:00:00Z"),
+        )
+        state._exec(
+            "INSERT INTO messages (id, bot, chat_id, message_id, event_type, captured_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (2, "my_bot", 100, 2, "new", "2026-01-01T00:00:01Z"),
+        )
+        state._exec(
+            "INSERT INTO entities (message_rowid, type, offset, length) VALUES (?, ?, ?, ?)",
+            (1, "bold", 0, 5),
+        )
+        state._exec(
+            "INSERT INTO media (bot, message_rowid, kind) VALUES (?, ?, ?)",
+            ("my_bot", 2, "photo"),
+        )
+
+        msgs = state.messages_all("my_bot")
+        assert len(msgs) == 2
+        assert len(msgs[0]["entities"]) == 1
+        assert msgs[0]["entities"][0]["type"] == "bold"
+        assert len(msgs[0]["media"]) == 0
+        assert len(msgs[1]["entities"]) == 0
+        assert len(msgs[1]["media"]) == 1
+        assert msgs[1]["media"][0]["kind"] == "photo"
+    finally:
+        state.close()
+
+
+def test_utf16_offset_negative_index():
+    """Verifies utf16_offset_of_char correctly handles negative index."""
+    text = "Привет"
+    offset_neg = utf16_offset_of_char(text, -1)
+    offset_pos = utf16_offset_of_char(text, len(text) - 1)
+    assert offset_neg == offset_pos
+    assert offset_neg == 5
+
+
+def test_tl_serial_clean_handles_cycles():
+    """Verifies tl_serial.clean gracefully handles self-referencing data structures without recursion error."""
+    cyclic_dict = {"a": 1}
+    cyclic_dict["self"] = cyclic_dict
+    cleaned = clean(cyclic_dict)
+    assert cleaned["a"] == 1
+    assert "$cycle" in cleaned["self"]
 
 

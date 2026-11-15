@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import sqlite3
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 from tg_flowmap.core.comparator import BotComparator
 from tg_flowmap.core.llm_exporter import generate_llm_benchmark_prompt
@@ -68,16 +70,24 @@ def test_state_exec_rollback_on_error(tmp_path: Path):
 
 def test_navigation_executor_answer_only():
     """Ensures answer_only callback is treated as success without breaking graph step."""
-    executor = NavigationExecutor("@dummy", None, None, None)
+    mock_nav = MagicMock()
+    mock_outcome = PressOutcome(kind="answer_only", message=None, callback=CallbackResult(alert=True, message="Toast!"))
+    mock_nav.press_button = AsyncMock(return_value=mock_outcome)
+    executor = NavigationExecutor("@dummy", mock_nav, None, None)
 
     async def fake_observe(out):
         return None, None, None
 
-    # Simulating execute_action_by_id outcome
-    outcome = PressOutcome(kind="answer_only", message=None, callback=CallbackResult(alert=True, message="Toast!"))
-    # Direct test of observe logic branch
-    # If outcome is answer_only, step should succeed
-    assert outcome.kind == "answer_only"
+    action = {"action_id": "act1", "label": "Click", "button_type": "callback", "row": 0, "col": 0}
+    current_instances = [action]
+    current_msg = MagicMock(id=100)
+
+    result = asyncio.run(
+        executor.execute_action_by_id(action, current_msg, current_instances, fake_observe)
+    )
+    assert result.success is True
+    assert result.reason == "answer_only"
+    assert result.outcome == mock_outcome
 
 
 def test_parser_message_answer_vs_call_answer(tmp_path: Path):

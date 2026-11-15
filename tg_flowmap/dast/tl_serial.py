@@ -21,10 +21,21 @@ from pathlib import Path
 _MAX_REPR = 500
 
 
-def clean(value):
-    """Рекурсивно превращает значение в JSON-совместимое."""
+def clean(value, _seen=None, _depth: int = 0, max_depth: int = 30):
+    """Рекурсивно превращает значение в JSON-совместимое с защитой от циклов."""
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
+    if _depth >= max_depth:
+        return {"$unknown": type(value).__name__, "repr": repr(value)[:_MAX_REPR]}
+
+    if _seen is None:
+        _seen = set()
+    val_id = id(value)
+    if isinstance(value, (dict, list, tuple, set, frozenset)):
+        if val_id in _seen:
+            return {"$cycle": type(value).__name__, "id": val_id}
+        _seen.add(val_id)
+
     if isinstance(value, (bytes, bytearray)):
         return {
             "$bytes": {
@@ -32,20 +43,21 @@ def clean(value):
                 "hex": bytes(value).hex(),
             }
         }
-    if isinstance(value, datetime.datetime):
-        return value.isoformat()
-    if isinstance(value, datetime.date):
+    if isinstance(value, (datetime.datetime, datetime.date)):
         return value.isoformat()
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, dict):
-        return {str(k): clean(v) for k, v in value.items()}
+        return {str(k): clean(v, _seen, _depth + 1, max_depth) for k, v in value.items()}
     if isinstance(value, (list, tuple, set, frozenset)):
-        return [clean(v) for v in value]
+        return [clean(v, _seen, _depth + 1, max_depth) for v in value]
     to_dict = getattr(value, "to_dict", None)
     if callable(to_dict):
+        if val_id in _seen:
+            return {"$cycle": type(value).__name__, "id": val_id}
+        _seen.add(val_id)
         try:
-            return clean(value.to_dict())
+            return clean(value.to_dict(), _seen, _depth + 1, max_depth)
         except Exception:  # noqa: BLE001 - падение to_dict не должно ломать обход
             pass
     return {

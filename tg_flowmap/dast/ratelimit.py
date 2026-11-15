@@ -32,10 +32,12 @@ class GlobalLimiter:
     async def acquire(self) -> None:
         async with self._lock:
             now = time.monotonic()
-            wait = self._next_time - now
-            if wait > 0:
-                await asyncio.sleep(wait)
-            self._next_time = time.monotonic() + self.min_interval
+            target_time = max(now, self._next_time)
+            self._next_time = target_time + self.min_interval
+            wait = target_time - now
+
+        if wait > 0:
+            await asyncio.sleep(wait)
 
 
 class FloodGate:

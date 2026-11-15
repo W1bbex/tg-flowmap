@@ -288,11 +288,23 @@ class State:
         rows = [dict(r) for r in self._query(
             "SELECT * FROM messages WHERE bot=? ORDER BY chat_id, message_id, version",
             (bot,))]
+        if not rows:
+            return []
+
+        row_ids = [r["id"] for r in rows]
+        placeholders = ",".join("?" for _ in row_ids)
+
+        entities_by_rowid: dict[int, list[dict]] = {}
+        for e in self._query(f"SELECT * FROM entities WHERE message_rowid IN ({placeholders})", tuple(row_ids)):
+            entities_by_rowid.setdefault(e["message_rowid"], []).append(dict(e))
+
+        media_by_rowid: dict[int, list[dict]] = {}
+        for m in self._query(f"SELECT * FROM media WHERE message_rowid IN ({placeholders})", tuple(row_ids)):
+            media_by_rowid.setdefault(m["message_rowid"], []).append(dict(m))
+
         for r in rows:
-            r["entities"] = [dict(e) for e in self._query(
-                "SELECT * FROM entities WHERE message_rowid=?", (r["id"],))]
-            r["media"] = [dict(m) for m in self._query(
-                "SELECT * FROM media WHERE message_rowid=?", (r["id"],))]
+            r["entities"] = entities_by_rowid.get(r["id"], [])
+            r["media"] = media_by_rowid.get(r["id"], [])
         return rows
 
     # ---------------------------------------------------------------- кнопки

@@ -151,7 +151,6 @@ class BotCrawler(CrawlerRecoveryMixin):
 
     def _bump_action(self) -> int:
         """Считает КАЖДОЕ Telegram-действие в общем бюджете."""
-        self._consecutive_errors = 0
         n = self.state.progress_incr(self.bot, "actions")
         self.metrics.telegram_actions += 1
         self.state.metric_incr(self.bot, "telegram_actions", 1)
@@ -456,7 +455,21 @@ class BotCrawler(CrawlerRecoveryMixin):
 
     async def _execute_direct_action(self, screen_id: str, action_id: str | None) -> None:
         """Прямое выполнение действия на текущем экране."""
-        if not action_id or self._current_msg is None:
+        if not action_id:
+            return
+
+        if self._current_msg is None:
+            retries = self.action_retries.get(action_id, 0) + 1
+            self.action_retries[action_id] = retries
+            self._bump_errors()
+            if retries >= self.cfg.max_replans_per_target:
+                self.state.mark_action_explored(self.bot, action_id)
+                self.planner.record_replan_failure(screen_id)
+                self.state.errors_add(
+                    self.bot, "action_no_current_msg",
+                    f"действие {action_id} на {screen_id} пропущено: нет текущего сообщения",
+                )
+            await asyncio.sleep(0.1)
             return
 
         actions = self.state.actions_for_screen(self.bot, screen_id)
@@ -508,6 +521,7 @@ class BotCrawler(CrawlerRecoveryMixin):
             return
 
         # Успешное выполнение
+        self._consecutive_errors = 0
         self.action_retries.pop(action_id, None)
         if act.get("button_type") == "callback":
             self.metrics.callbacks_pressed += 1

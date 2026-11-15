@@ -35,14 +35,13 @@ def test_execute_sast_scan_generates_artifacts(tmp_path: Path):
     assert demo_path.exists(), "examples/sample_bot.py must exist"
 
     with patch("webbrowser.open") as mock_open:
-        exit_code = execute_sast_scan(demo_path)
+        exit_code = execute_sast_scan(demo_path, output_dir=tmp_path)
         assert exit_code == 0
         mock_open.assert_called_once()
 
-    output_dir = demo_path.parent.parent / "output"
-    assert (output_dir / "sample_bot_map.html").exists()
-    assert (output_dir / "sample_bot_report.md").exists()
-    assert (output_dir / "sample_bot_data.json").exists()
+    assert (tmp_path / "sample_bot_map.html").exists()
+    assert (tmp_path / "sample_bot_report.md").exists()
+    assert (tmp_path / "sample_bot_data.json").exists()
 
 
 def test_interactive_menu_exit():

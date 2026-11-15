@@ -65,7 +65,7 @@ def collect_bot_stats(cfg: Config, state: State, bot: str) -> dict:
     screens_with_media = {
         row["screen_id"]
         for row in state._query(
-            "SELECT DISTINCT msg.screen_id FROM media m JOIN messages msg ON msg.id=m.message_rowid WHERE msg.bot=?",
+            "SELECT DISTINCT msg.screen_id FROM media m JOIN messages msg ON msg.id=m.message_rowid WHERE msg.bot=? AND m.kind IN ('photo', 'image')",
             (bot,),
         )
     }

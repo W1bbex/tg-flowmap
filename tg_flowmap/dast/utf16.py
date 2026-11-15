@@ -28,6 +28,8 @@ def utf16_slice(text: str, offset: int, length: int) -> str:
 
 def utf16_offset_of_char(text: str, char_index: int) -> int:
     """UTF-16 offset для индекса Python-символа."""
+    if char_index < 0:
+        char_index = max(0, len(text) + char_index)
     units = 0
     for i, ch in enumerate(text):
         if i >= char_index:

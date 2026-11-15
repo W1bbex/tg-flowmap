@@ -248,15 +248,15 @@ def run_telegram_config_wizard(cfg_path: Path) -> bool:
     return False
 
 
-def execute_sast_scan(target_path: Path) -> int:
+def execute_sast_scan(target_path: Path, output_dir: Optional[Path] = None) -> int:
     """Executes SAST analysis and opens interactive HTML map in browser."""
     bot_name = target_path.stem if target_path.is_file() else target_path.name
-    output_dir = SCRIPT_DIR / "output"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    target_out_dir = output_dir or (SCRIPT_DIR / "output")
+    target_out_dir.mkdir(parents=True, exist_ok=True)
 
-    output_html = output_dir / f"{bot_name}_map.html"
-    output_md = output_dir / f"{bot_name}_report.md"
-    output_json = output_dir / f"{bot_name}_data.json"
+    output_html = target_out_dir / f"{bot_name}_map.html"
+    output_md = target_out_dir / f"{bot_name}_report.md"
+    output_json = target_out_dir / f"{bot_name}_data.json"
 
     bot_token = load_env_token(target_path)
     parser = AstParser()

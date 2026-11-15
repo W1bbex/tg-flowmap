@@ -738,7 +738,11 @@
 
       for (const [id, node] of Object.entries(rawData.nodes)) {
         const titleMatch = (node.title || "").toLowerCase().includes(q) || id.toLowerCase().includes(q);
-        const btnMatch = node.keyboard && node.keyboard.rows.some(r => r.some(b => (b.text || "").toLowerCase().includes(q) || (b.callback_data && b.callback_data.toLowerCase().includes(q))));
+        const btnMatch = Boolean(
+          node.keyboard &&
+          Array.isArray(node.keyboard.rows) &&
+          node.keyboard.rows.some(r => Array.isArray(r) && r.some(b => (b.text || "").toLowerCase().includes(q) || (b.callback_data && b.callback_data.toLowerCase().includes(q))))
+        );
         if (titleMatch || btnMatch) {
           focusOnCard(id, 700);
           break;

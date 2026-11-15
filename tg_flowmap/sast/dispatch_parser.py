@@ -113,7 +113,7 @@ class DispatchParserMixin:
                                 if isinstance(kw.value, ast.Dict):
                                     parsed_inline = self._parse_keyboard_expr(
                                         kw.value,
-                                        f"inline_{lineno}",
+                                        f"inline_{Path(filepath).stem}_{lineno}",
                                         filepath,
                                         lineno,
                                         local_body_nodes,
@@ -156,7 +156,7 @@ class DispatchParserMixin:
                                                         if rows and not inline_kb:
                                                             b_type = builder_types.get(b_name, "inline")
                                                             inline_kb = Keyboard(
-                                                                name=f"inline_{lineno}",
+                                                                name=f"inline_{Path(filepath).stem}_{lineno}",
                                                                 rows=rows,
                                                                 keyboard_type=b_type,
                                                                 source_file=str(filepath),

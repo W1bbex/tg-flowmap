@@ -49,6 +49,10 @@ def _unwind_call_chain(call_node: ast.Call) -> Tuple[Optional[str], List[Tuple[s
         curr = curr.func.value
     if isinstance(curr, ast.Name):
         return curr.id, list(reversed(chain))
+    if isinstance(curr, ast.Call):
+        func_name = getattr(curr.func, "id", None) or getattr(curr.func, "attr", "")
+        lineno = getattr(curr, "lineno", 0)
+        return f"__builder_{func_name}_{lineno}", list(reversed(chain))
     return None, []
 
 
@@ -480,8 +484,10 @@ class KeyboardParserMixin:
                     d[str(k.value)] = val
             d_text = d.get("text")
             text = str(d_text) if (d_text is not None and d_text != "") else "Button"
-            cb = str(d.get("callback_data", "") or "") or None
-            url = str(d.get("url", "") or "") or None
+            cb_val = d.get("callback_data")
+            cb = str(cb_val) if (cb_val is not None and str(cb_val) != "") else None
+            url_val = d.get("url")
+            url = str(url_val) if (url_val is not None and str(url_val) != "") else None
             icon_emoji = d.get("icon_custom_emoji_id")
             if icon_emoji:
                 self.custom_emoji_ids.add(str(icon_emoji))

@@ -47,13 +47,16 @@ class CommandParserMixin:
                     self.registered_menu_commands.add(str(cmd_name).strip().lstrip("/"))
         elif isinstance(node, ast.Name):
             var_val = self.global_constants.get(node.id)
+            found_any = False
             if isinstance(var_val, list):
                 for item in var_val:
                     if isinstance(item, str):
                         self.registered_menu_commands.add(item.strip().lstrip("/"))
+                        found_any = True
                     elif isinstance(item, dict) and "command" in item:
                         self.registered_menu_commands.add(str(item["command"]).strip().lstrip("/"))
-            elif tree is not None:
+                        found_any = True
+            if not found_any and tree is not None:
                 if visited_names is None:
                     visited_names = set()
                 if node.id in visited_names:

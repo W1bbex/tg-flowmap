@@ -368,9 +368,9 @@ def run_compare(
     path_b = Path(target_b)
 
     comparator = BotComparator(
-        bot_a_name=path_a.name if path_a.exists() else target_a,
+        bot_a_name=(path_a.resolve().name or target_a) if path_a.exists() else target_a,
         bot_a_data=data_a,
-        bot_b_name=path_b.name if path_b.exists() else target_b,
+        bot_b_name=(path_b.resolve().name or target_b) if path_b.exists() else target_b,
         bot_b_data=data_b,
     )
 

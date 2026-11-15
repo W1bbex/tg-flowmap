@@ -489,14 +489,30 @@ def _render_map_mmd(bot: str, nodes: list[dict], edges: list[dict]) -> str:
     lines = ["graph TD", f"  %% Bot interface map: {bot}"]
     for n in nodes:
         sid = n["id"]
-        text_preview = (n.get("text_norm") or "")[:25].replace('"', "'").replace("\n", " ").replace("\r", "").replace("|", "/")
+        text_preview = (
+            (n.get("text_norm") or "")[:25]
+            .replace('"', "'")
+            .replace("\n", " ")
+            .replace("\r", "")
+            .replace("|", "/")
+            .replace("[", "(")
+            .replace("]", ")")
+        )
         lines.append(f'  {sid}["{sid}<br/>{text_preview}"]')
 
     for e in edges:
         src = e["source"]
         dst = e["target"]
         raw_label = e.get("label") or "go"
-        label = raw_label.replace('"', "'").replace("|", "/").replace("\n", " ").replace("\r", "").strip()
+        label = (
+            raw_label.replace('"', "'")
+            .replace("|", "/")
+            .replace("\n", " ")
+            .replace("\r", "")
+            .replace("[", "(")
+            .replace("]", ")")
+            .strip()
+        )
         if e.get("result_type") == "recovery":
             arrow = f'-.->|"recovery: {label}"|'
         else:
