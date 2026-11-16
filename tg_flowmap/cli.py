@@ -284,7 +284,7 @@ def run_dast_scan(
     return scan_exit_code
 
 
-def _load_target_data(target: str, out_dir: Path) -> dict:
+def _load_target_data(target: str, out_dir: Path) -> dict | None:
     p = Path(target)
     if p.exists():
         parser = AstParser()
@@ -344,7 +344,9 @@ def _load_target_data(target: str, out_dir: Path) -> dict:
             }
         except Exception as e:
             print(f"[WARN] Ошибка загрузки данных графа из {cand}: {e}", file=sys.stderr)
-    return {"metrics": {"screens_count": 0, "buttons_count": 0, "dead_ends": None, "missing_back": None}, "screens": []}
+            return None
+    print(f"[ERROR] Источник для сравнения не найден: {target} (ожидался путь или {cand})", file=sys.stderr)
+    return None
 
 
 def run_compare(
@@ -364,6 +366,8 @@ def run_compare(
 
     data_a = _load_target_data(target_a, out_dir)
     data_b = _load_target_data(target_b, out_dir)
+    if data_a is None or data_b is None:
+        return 1
 
     path_a = Path(target_a)
     path_b = Path(target_b)

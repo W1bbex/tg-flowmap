@@ -157,3 +157,12 @@ def test_load_target_data_leaves_unmeasured_dast_metrics_as_none_and_comparator_
     assert "не измерено" in md
     assert "| Тупиковые экраны (Dead-ends) | 1 | не измерено | — (не измерено)" in md
     assert "| Экраны без кнопки возврата | 1 | не измерено | — (не измерено)" in md
+
+
+def test_run_compare_fails_when_source_missing(tmp_path):
+    from tg_flowmap.cli import _load_target_data, run_compare
+
+    assert _load_target_data("missing_bot_a", tmp_path) is None
+    exit_code = run_compare("missing_bot_a", "missing_bot_b", output_dir=tmp_path)
+    assert exit_code != 0
+    assert not (tmp_path / "comparison.md").exists()
