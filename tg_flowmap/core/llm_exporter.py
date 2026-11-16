@@ -47,14 +47,17 @@ def generate_llm_benchmark_prompt(
     Generates a prompt-ready markdown string tailored for LLMs (Claude, ChatGPT, Gemini)
     to perform a rigorous, actionable UX and conversion-rate optimization (CRO) benchmark.
     """
+    def _fmt(val: Any) -> str:
+        return "не измерено" if val is None else str(val)
+
     a_screens_count = bot_a_metrics.get("screens_count", 0)
     b_screens_count = bot_b_metrics.get("screens_count", 0)
     a_buttons_count = bot_a_metrics.get("buttons_count", 0)
     b_buttons_count = bot_b_metrics.get("buttons_count", 0)
-    a_dead_ends = bot_a_metrics.get("dead_ends", 0)
-    b_dead_ends = bot_b_metrics.get("dead_ends", 0)
-    a_missing_back = bot_a_metrics.get("missing_back", 0)
-    b_missing_back = bot_b_metrics.get("missing_back", 0)
+    a_dead_ends = _fmt(bot_a_metrics.get("dead_ends"))
+    b_dead_ends = _fmt(bot_b_metrics.get("dead_ends"))
+    a_missing_back = _fmt(bot_a_metrics.get("missing_back"))
+    b_missing_back = _fmt(bot_b_metrics.get("missing_back"))
     a_max_depth = bot_a_metrics.get("max_depth", "N/A")
     b_max_depth = bot_b_metrics.get("max_depth", "N/A")
 

@@ -140,4 +140,4 @@ tg-flowmap compare path/to/my_bot @competitor_bot
 ```bash
 pytest tests -v
 ```
-**304 тестов** (SAST, DAST, Safety, State, Regression), включая проверку кодов завершения DAST и сохранения отчётов при ошибке или прерывании.
+**305 тестов** (SAST, DAST, Safety, State, Regression), включая проверку кодов завершения DAST и сохранения отчётов при ошибке или прерывании.

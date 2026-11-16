@@ -126,3 +126,34 @@ def test_mermaid_render_escapes_pipes_and_newlines():
     assert "Оплата / СБП Быстро" in mmd
     assert "\nБыстро" not in mmd
     assert "-->|\"Оплата / СБП Быстро\"|" in mmd
+
+
+def test_load_target_data_leaves_unmeasured_dast_metrics_as_none_and_comparator_excludes_leader(tmp_path):
+    """DAST graph.json without dead_ends/missing_back measurements must not report 0 or crown a winner."""
+    from tg_flowmap.core.comparator import BotComparator
+
+    bot_dir = tmp_path / "dast_only"
+    bot_dir.mkdir()
+    (bot_dir / "graph.json").write_text(
+        json.dumps(
+            {
+                "nodes": [
+                    {"id": "s_root", "text": "Start", "buttons": [{"label": "Go"}]},
+                    {"id": "s_leaf", "text": "End", "buttons": []},
+                ],
+                "edges": [{"from": "s_root", "to": "s_leaf", "action": "Go"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = _load_target_data("@dast_only", tmp_path)
+    assert loaded["metrics"]["dead_ends"] is None
+    assert loaded["metrics"]["missing_back"] is None
+
+    sast_side = {"metrics": {"screens_count": 2, "buttons_count": 1, "dead_ends": 1, "missing_back": 1}}
+    comp = BotComparator("MyBot", sast_side, "DastBot", loaded)
+    md = comp.build_comparison_markdown()
+    assert "не измерено" in md
+    assert "| Тупиковые экраны (Dead-ends) | 1 | не измерено | — (не измерено)" in md
+    assert "| Экраны без кнопки возврата | 1 | не измерено | — (не измерено)" in md

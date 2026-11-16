@@ -78,8 +78,8 @@ class BotComparator:
         return {
             "screens_count": summary.get("screens_count", summary.get("total_screens", summary.get("screens", 0))),
             "buttons_count": summary.get("buttons_count", summary.get("total_buttons", summary.get("buttons", 0))),
-            "dead_ends": summary.get("dead_ends", 0),
-            "missing_back": summary.get("missing_back", 0),
+            "dead_ends": summary.get("dead_ends"),
+            "missing_back": summary.get("missing_back"),
             "max_depth": summary.get("max_depth", 8),
         }
 
@@ -104,7 +104,12 @@ class BotComparator:
     def build_comparison_markdown(self) -> str:
         metrics_a, metrics_b = self._resolve_metrics()
 
+        def _fmt_metric(val: Any) -> str:
+            return "не измерено" if val is None else str(val)
+
         def _leader(val_a: Any, val_b: Any, lower_is_better: bool = False) -> str:
+            if val_a is None or val_b is None:
+                return "— (не измерено)"
             try:
                 v_a = float(val_a)
                 v_b = float(val_b)
@@ -118,8 +123,8 @@ class BotComparator:
 
         s_a, s_b = metrics_a.get('screens_count', 0), metrics_b.get('screens_count', 0)
         b_a, b_b = metrics_a.get('buttons_count', 0), metrics_b.get('buttons_count', 0)
-        d_a, d_b = metrics_a.get('dead_ends', 0), metrics_b.get('dead_ends', 0)
-        m_a, m_b = metrics_a.get('missing_back', 0), metrics_b.get('missing_back', 0)
+        d_a, d_b = metrics_a.get('dead_ends'), metrics_b.get('dead_ends')
+        m_a, m_b = metrics_a.get('missing_back'), metrics_b.get('missing_back')
 
         lines = [
             "# ⚔️ Telegram Bot Benchmark & Comparison",
@@ -133,10 +138,10 @@ class BotComparator:
             "",
             f"| Метрика интерфейса | {self.bot_a_name} | {self.bot_b_name} | Лидер |",
             "|---|---|---|---|",
-            f"| Всего экранов в структуре | {s_a} | {s_b} | {_leader(s_a, s_b)} |",
-            f"| Всего интерактивных действий | {b_a} | {b_b} | {_leader(b_a, b_b)} |",
-            f"| Тупиковые экраны (Dead-ends) | {d_a} | {d_b} | {_leader(d_a, d_b, lower_is_better=True)} (меньше = лучше) |",
-            f"| Экраны без кнопки возврата | {m_a} | {m_b} | {_leader(m_a, m_b, lower_is_better=True)} |",
+            f"| Всего экранов в структуре | {_fmt_metric(s_a)} | {_fmt_metric(s_b)} | {_leader(s_a, s_b)} |",
+            f"| Всего интерактивных действий | {_fmt_metric(b_a)} | {_fmt_metric(b_b)} | {_leader(b_a, b_b)} |",
+            f"| Тупиковые экраны (Dead-ends) | {_fmt_metric(d_a)} | {_fmt_metric(d_b)} | {_leader(d_a, d_b, lower_is_better=True)} (меньше = лучше) |",
+            f"| Экраны без кнопки возврата | {_fmt_metric(m_a)} | {_fmt_metric(m_b)} | {_leader(m_a, m_b, lower_is_better=True)} |",
             "",
             "---",
             "",

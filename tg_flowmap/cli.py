@@ -332,18 +332,19 @@ def _load_target_data(target: str, out_dir: Path) -> dict:
                 }
                 for n in nodes
             ]
+            summary = graph_data.get("summary") or {}
             return {
                 "metrics": {
                     "screens_count": len(nodes),
                     "buttons_count": total_buttons if total_buttons > 0 else len(edges),
-                    "dead_ends": 0,
-                    "missing_back": 0,
+                    "dead_ends": summary.get("dead_ends"),
+                    "missing_back": summary.get("missing_back"),
                 },
                 "screens": screens_list,
             }
         except Exception as e:
             print(f"[WARN] Ошибка загрузки данных графа из {cand}: {e}", file=sys.stderr)
-    return {"metrics": {"screens_count": 0, "buttons_count": 0, "dead_ends": 0, "missing_back": 0}, "screens": []}
+    return {"metrics": {"screens_count": 0, "buttons_count": 0, "dead_ends": None, "missing_back": None}, "screens": []}
 
 
 def run_compare(
