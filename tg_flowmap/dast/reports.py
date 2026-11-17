@@ -460,7 +460,11 @@ def generate_reports(cfg: Config, state: State, bot: str) -> dict[str, Path]:
 
     errs = state.errors_list(bot, limit=10000)
     err_lines = [
-        f"{e['ts']}\t{e['kind']}\t{(e['message'] or '').replace(chr(13), ' ').replace(chr(10), '\\n').replace(chr(9), ' ')}\t{(e['context'] or '').replace(chr(13), ' ').replace(chr(10), '\\n').replace(chr(9), ' ')}"
+        "\t".join([
+            str(e['ts']), str(e['kind']),
+            (e['message'] or '').replace('\r', ' ').replace('\n', '\\n').replace('\t', ' '),
+            (e['context'] or '').replace('\r', ' ').replace('\n', '\\n').replace('\t', ' '),
+        ])
         for e in reversed(errs)
     ]
     (bot_dir / "errors.log").write_text("\n".join(err_lines), encoding="utf-8")
