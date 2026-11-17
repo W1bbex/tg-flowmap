@@ -392,7 +392,12 @@ class BotCrawler(CrawlerRecoveryMixin):
 
             # 2. Graph-first locality планирование для оставшихся неисследованных действий
             unexplored = self.state.unexplored_actions_all(self.bot)
-            unexplored = {sid: acts for sid, acts in unexplored.items() if sid not in failed_targets}
+            eligible = {
+                screen["screen_id"] for screen in self.state.screens_all(self.bot)
+                if screen["depth_min"] < self.cfg.max_depth
+            }
+            unexplored = {sid: acts for sid, acts in unexplored.items()
+                          if sid not in failed_targets and sid in eligible}
 
             if not unexplored:
                 return
@@ -456,6 +461,10 @@ class BotCrawler(CrawlerRecoveryMixin):
     async def _execute_direct_action(self, screen_id: str, action_id: str | None) -> None:
         """Прямое выполнение действия на текущем экране."""
         if not action_id:
+            return
+
+        screen = self.state.get_screen(self.bot, screen_id)
+        if screen is not None and screen["depth_min"] >= self.cfg.max_depth:
             return
 
         if self._current_msg is None:
@@ -655,6 +664,8 @@ class BotCrawler(CrawlerRecoveryMixin):
         screen_id = item["screen_id"]
         path = item["path"]
         depth = item["depth"]
+        if depth >= self.cfg.max_depth:
+            return
         buttons = self.state.buttons_for_screen(self.bot, screen_id)
         pressable = [b for b in buttons
                      if not b.blocked_reason and b.button_type in ("callback", "reply")]
