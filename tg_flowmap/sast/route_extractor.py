@@ -49,6 +49,7 @@ class RouteExtractorMixin:
 
     def _extract_handlers(self, tree: ast.AST, filepath: Path) -> None:
         """Finds if-else blocks, match-case, or decorators handling callback_data or commands."""
+        self._current_filepath = filepath
         for node in ast.walk(tree):
             if isinstance(node, ast.If):
                 self._inspect_if_route(node, filepath)
@@ -70,7 +71,7 @@ class RouteExtractorMixin:
             patterns = pattern.patterns if hasattr(ast, "MatchOr") and isinstance(pattern, ast.MatchOr) else [pattern]
             for p in patterns:
                 if hasattr(ast, "MatchValue") and isinstance(p, ast.MatchValue):
-                    val = _ast_to_value(p.value, {}, self.global_constants)
+                    val = _ast_to_value(p.value, {}, self._get_constants_for_file(filepath))
                     if val:
                         route_vals.append(str(val))
 

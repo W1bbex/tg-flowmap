@@ -203,7 +203,7 @@ def run_analysis(
     dead_ends = stats.get("dead_ends", 0)
     broken_emojis = stats.get("broken_emojis", 0)
     has_errors = any(i.severity == "error" for i in bot_map.issues) or (dead_ends > 0) or (broken_emojis > 0)
-    if strict and has_errors:
+    if strict and (has_errors or parser.skipped_files):
         print("\n[STRICT MODE] Обнаружены критические ошибки! Выход с кодом 1.")
         return 1
 
